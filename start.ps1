@@ -236,6 +236,30 @@ if (-not (Test-Path -LiteralPath $proxyFile)) {
     ) | Set-Content -LiteralPath $proxyFile -Encoding UTF8
 }
 
+function Get-ProxyDisplayText([string]$path) {
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        return "直连"
+    }
+    if (-not (Test-Path -LiteralPath $path)) {
+        return "直连 (未找到 proxy.txt)"
+    }
+
+    try {
+        $lines = Get-Content -LiteralPath $path -ErrorAction Stop
+    } catch {
+        return $path
+    }
+
+    foreach ($rawLine in $lines) {
+        $line = $rawLine.Trim()
+        if ($line -and -not $line.StartsWith("#")) {
+            return $path
+        }
+    }
+
+    return "直连 (proxy.txt 为空)"
+}
+
 function Prompt-Mode() {
     Write-Host "============================================================" -ForegroundColor DarkGray
     Write-Host " tg-session-checker-go" -ForegroundColor Cyan
@@ -439,7 +463,7 @@ while ($true) {
         Write-Host ("  " + (zh "6L6T5YWl") + ": $inputDisplay") -ForegroundColor White
         Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
         Write-Host ("  Workers: " + $workers) -ForegroundColor White
-        Write-Host ("  Proxy: " + $proxyFile) -ForegroundColor White
+        Write-Host ("  Proxy: " + (Get-ProxyDisplayText $proxyFile)) -ForegroundColor White
         Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
         Write-Host ""
 
