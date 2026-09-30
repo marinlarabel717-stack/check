@@ -102,21 +102,25 @@ function New-InputListFile([string[]]$paths) {
 }
 
 function Get-SafeFolderName([string]$name) {
-    $safeName = [string]::IsNullOrWhiteSpace($name) ? "检查结果" : $name.Trim()
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        $safeName = "check_result"
+    } else {
+        $safeName = $name.Trim()
+    }
     foreach ($char in [System.IO.Path]::GetInvalidFileNameChars()) {
         $safeName = $safeName.Replace($char, "_")
     }
     $safeName = $safeName -replace '\s+', '_'
     $safeName = $safeName.Trim('_', '.')
     if ([string]::IsNullOrWhiteSpace($safeName)) {
-        return "检查结果"
+        return "check_result"
     }
     return $safeName
 }
 
 function Get-InputBaseName([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) {
-        return "检查结果"
+        return "check_result"
     }
     $item = Get-Item -LiteralPath $path
     if ($item.PSIsContainer) {
