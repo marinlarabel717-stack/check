@@ -35,6 +35,7 @@ import (
 
 type config struct {
 	input     string
+	inputList string
 	outputDir string
 	appID     int
 	appHash   string
@@ -130,7 +131,7 @@ func main() {
 		log.Fatalf("创建输出目录失败: %v", err)
 	}
 
-	candidates, cleanup, err := collectCandidates(cfg.input)
+	candidates, cleanup, err := collectInputCandidates(cfg)
 	if err != nil {
 		log.Fatalf("收集 session 文件失败: %v", err)
 	}
@@ -153,6 +154,7 @@ func main() {
 
 func parseConfig() (config, error) {
 	var cfg config
+	flag.StringVar(&cfg.inputList, "input-list", "", "input list file, one path per line")
 	flag.StringVar(&cfg.input, "input", "", "输入目录、.session 文件或 .zip 包")
 	flag.StringVar(&cfg.outputDir, "out", "output", "输出目录")
 	flag.StringVar(&cfg.mode, "mode", "alive", "检查模式: alive | spam | both")
@@ -163,8 +165,7 @@ func parseConfig() (config, error) {
 
 	cfg.appID = readEnvInt("TG_APP_ID")
 	cfg.appHash = strings.TrimSpace(os.Getenv("TG_APP_HASH"))
-
-	if strings.TrimSpace(cfg.input) == "" {
+	if strings.TrimSpace(cfg.input) == "" && strings.TrimSpace(cfg.inputList) == "" {
 		return cfg, errors.New("必须提供 -input")
 	}
 	if cfg.appID <= 0 {
@@ -894,6 +895,73 @@ func summarize(reports []accountReport) map[string]int {
 		counts["abnormal"]++
 	}
 	return counts
+}
+
+func collectInputCandidates(cfg config) ([]sessionCandidate, func(), error) {
+	inputs := make([]string, 0, 8)
+	if input := strings.TrimSpace(cfg.input); input != "" {
+		inputs = append(inputs, input)
+	}
+
+	if listPath := strings.TrimSpace(cfg.inputList); listPath != "" {
+		data, err := os.ReadFile(listPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read input list: %w", err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			inputs = append(inputs, line)
+		}
+	}
+
+	if len(inputs) == 0 {
+		return nil, nil, errors.New("no usable input paths found")
+	}
+
+	all := make([]sessionCandidate, 0, 1024)
+	cleanups := make([]func(), 0, len(inputs))
+	seen := make(map[string]struct{}, len(inputs)*4)
+
+	for _, input := range inputs {
+		candidates, cleanup, err := collectCandidates(input)
+		if err != nil {
+			for _, fn := range cleanups {
+				if fn != nil {
+					fn()
+				}
+			}
+			return nil, nil, fmt.Errorf("%s: %w", input, err)
+		}
+		if cleanup != nil {
+			cleanups = append(cleanups, cleanup)
+		}
+		for _, candidate := range candidates {
+			key := strings.ToLower(filepath.Clean(candidate.SourcePath))
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			all = append(all, candidate)
+		}
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Name == all[j].Name {
+			return all[i].SourcePath < all[j].SourcePath
+		}
+		return all[i].Name < all[j].Name
+	})
+
+	return all, func() {
+		for _, fn := range cleanups {
+			if fn != nil {
+				fn()
+			}
+		}
+	}, nil
 }
 
 func collectCandidates(input string) ([]sessionCandidate, func(), error) {

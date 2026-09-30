@@ -34,6 +34,20 @@ function Select-FilePath([string]$title, [string]$filter) {
     return $null
 }
 
+function Select-FilePaths([string]$title, [string]$filter) {
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = $title
+    $dialog.Filter = $filter
+    $dialog.Multiselect = $true
+    $dialog.CheckFileExists = $true
+
+    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return @($dialog.FileNames)
+    }
+
+    return @()
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
@@ -81,12 +95,18 @@ function Prompt-Mode() {
     }
 }
 
-function Prompt-InputPath() {
+function New-InputListFile([string[]]$paths) {
+    $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ("tg-session-check-inputs-" + [guid]::NewGuid().ToString("N") + ".txt"))
+    [System.IO.File]::WriteAllLines($tempFile, $paths, [System.Text.Encoding]::UTF8)
+    return $tempFile
+}
+
+function Prompt-InputSource() {
     while ($true) {
         Write-Host ""
         Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
         Write-Host (" " + (zh "MS4g6YCJ5oupIHNlc3Npb24g5paH5Lu25aS5")) -ForegroundColor White
-        Write-Host (" " + (zh "Mi4g6YCJ5oup5Y2V5LiqIC5zZXNzaW9uIOaWh+S7tg==")) -ForegroundColor White
+        Write-Host (" " + (zh "Mi4g6YCJ5oup5aSa5Liq5paH5Lu25aS5")) -ForegroundColor White
         Write-Host (" " + (zh "My4g6YCJ5oupIC56aXAg5Y6L57yp5YyF")) -ForegroundColor White
         Write-Host (" " + (zh "NC4g5omL5Yqo6L6T5YWl6Lev5b6E")) -ForegroundColor White
         Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
@@ -100,28 +120,56 @@ function Prompt-InputPath() {
             "1" {
                 $selectedPath = Select-FilePath (zh "6K+36YCJ5oup6L+Z5Liq5paH5Lu25aS56YeM55qE5Lu75oSP5LiA5LiqIC5zZXNzaW9uIOaWh+S7tg==") "Session files (*.session)|*.session|All files (*.*)|*.*"
                 if ($selectedPath) {
-                    return Split-Path -Parent $selectedPath
+                    $folderPath = Split-Path -Parent $selectedPath
+                    return @{
+                        Args = @("-input", $folderPath)
+                        Display = $folderPath
+                        TempFile = $null
+                    }
                 }
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }
             "2" {
-                $selectedPath = Select-FilePath (zh "6K+36YCJ5oupIC5zZXNzaW9uIOaWh+S7tg==") "Session files (*.session)|*.session|All files (*.*)|*.*"
-                if ($selectedPath) {
-                    return $selectedPath
+                $selectedPaths = Select-FilePaths (zh "6K+36YCJ5oup5aSa5Liq5paH5Lu25aS577yI5q+P5Liq5paH5Lu25aS55Lu75oSP54K55LiA5LiqIC5zZXNzaW9u77yJ") "Session files (*.session)|*.session|All files (*.*)|*.*"
+                if ($selectedPaths.Count -gt 0) {
+                    $folderMap = @{}
+                    foreach ($selectedPath in $selectedPaths) {
+                        $folderPath = Split-Path -Parent $selectedPath
+                        if (-not [string]::IsNullOrWhiteSpace($folderPath)) {
+                            $folderMap[$folderPath] = $true
+                        }
+                    }
+                    $folderPaths = @($folderMap.Keys | Sort-Object)
+                    if ($folderPaths.Count -gt 0) {
+                        $inputListFile = New-InputListFile $folderPaths
+                        return @{
+                            Args = @("-input-list", $inputListFile)
+                            Display = ((zh "5aSa5Liq5paH5Lu25aS5") + " (" + $folderPaths.Count + " " + (zh "5Liq") + ")")
+                            TempFile = $inputListFile
+                        }
+                    }
                 }
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }
             "3" {
                 $selectedPath = Select-FilePath (zh "6K+36YCJ5oupIC56aXAg5Y6L57yp5YyF") "Zip files (*.zip)|*.zip|All files (*.*)|*.*"
                 if ($selectedPath) {
-                    return $selectedPath
+                    return @{
+                        Args = @("-input", $selectedPath)
+                        Display = $selectedPath
+                        TempFile = $null
+                    }
                 }
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }
             "4" {
                 $manualPath = Read-Host (zh "6K+36L6T5YWl6Lev5b6E")
                 if (-not [string]::IsNullOrWhiteSpace($manualPath) -and (Test-Path -LiteralPath $manualPath)) {
-                    return $manualPath
+                    return @{
+                        Args = @("-input", $manualPath)
+                        Display = $manualPath
+                        TempFile = $null
+                    }
                 }
                 Write-Host (zh "6Lev5b6E5LiN5a2Y5Zyo77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }
@@ -160,7 +208,10 @@ while ($true) {
     $modeLabel = $modeInfo.Label
 
     try {
-        $inputPath = Prompt-InputPath
+        $inputInfo = Prompt-InputSource
+        $inputArgs = @($inputInfo.Args)
+        $inputDisplay = $inputInfo.Display
+        $tempInputListFile = $inputInfo.TempFile
         $defaultOutputRoot = Join-Path $scriptDir "output"
         $outputRoot = Prompt-OutputDir $defaultOutputRoot
 
@@ -172,7 +223,7 @@ while ($true) {
         Write-Host ""
         Write-Host (zh "5byA5aeL5omn6KGM77ya") -ForegroundColor Cyan
         Write-Host ("  " + (zh "5qih5byP") + ": $modeLabel ($mode)") -ForegroundColor White
-        Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
+        Write-Host ("  " + (zh "6L6T5YWl") + ": $inputDisplay") -ForegroundColor White
         Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
         Write-Host ("  Workers: " + $workers) -ForegroundColor White
         Write-Host ("  Proxy: " + $proxyFile) -ForegroundColor White
@@ -181,13 +232,17 @@ while ($true) {
 
         $exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
         if (Test-Path -LiteralPath $exePath) {
-            & $exePath -input $inputPath -mode $mode -workers $workers -proxy-file $proxyFile -out $outputDir
+            & $exePath @inputArgs -mode $mode -workers $workers -proxy-file $proxyFile -out $outputDir
         } else {
-            go run . -input $inputPath -mode $mode -workers $workers -proxy-file $proxyFile -out $outputDir
+            go run . @inputArgs -mode $mode -workers $workers -proxy-file $proxyFile -out $outputDir
         }
     } catch {
         Write-Host ""
         Write-Host ("ERROR: " + $_.Exception.Message) -ForegroundColor Red
+    } finally {
+        if ($tempInputListFile -and (Test-Path -LiteralPath $tempInputListFile)) {
+            Remove-Item -LiteralPath $tempInputListFile -Force -ErrorAction SilentlyContinue
+        }
     }
 
     Write-Host ""
