@@ -572,7 +572,7 @@ func statusDisplay(report accountReport) (string, string) {
 		return "冻结", ansiBlue
 	case "timeout":
 		return "超时", ansiYellow
-	case "failed":
+	case "failed", "unauthorized":
 		return failureDisplay(report), ansiRed
 	default:
 		if report.StatusCode == "unknown" {
@@ -594,6 +594,8 @@ func statusDisplay(report accountReport) (string, string) {
 			return "封禁", ansiRed
 		case "frozen":
 			return "冻结", ansiBlue
+		case "failed":
+			return failureDisplay(report), ansiRed
 		default:
 			return "未知", ansiCyan
 		}
