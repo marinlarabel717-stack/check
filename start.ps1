@@ -471,14 +471,8 @@ while ($true) {
         $mainGoPath = Join-Path $scriptDir "main.go"
         if (Test-Path -LiteralPath $exePath) {
             $exeInfo = Get-Item -LiteralPath $exePath
-            $referenceTimes = @()
-            foreach ($referencePath in @($PSCommandPath, $mainGoPath)) {
-                if ($referencePath -and (Test-Path -LiteralPath $referencePath)) {
-                    $referenceTimes += (Get-Item -LiteralPath $referencePath).LastWriteTimeUtc
-                }
-            }
-            if ($referenceTimes.Count -gt 0) {
-                $latestReferenceTime = ($referenceTimes | Sort-Object -Descending | Select-Object -First 1)
+            if ($mainGoPath -and (Test-Path -LiteralPath $mainGoPath)) {
+                $latestReferenceTime = (Get-Item -LiteralPath $mainGoPath).LastWriteTimeUtc
                 if ($exeInfo.LastWriteTimeUtc -lt $latestReferenceTime) {
                     Write-Host "警告：当前 exe 时间早于脚本/源码，可能菜单已更新，但核心二进制还是旧版。" -ForegroundColor Yellow
                     Write-Host ("  EXE: " + $exeInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")) -ForegroundColor DarkYellow
