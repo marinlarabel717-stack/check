@@ -256,7 +256,7 @@ func (p *progressTracker) record(report accountReport) {
 		p.unknown++
 	}
 
-	statusText, statusColor := statusDisplay(report.StatusCode)
+	statusText, statusColor := statusDisplay(report)
 	phone := displayPhone(report)
 	pending := p.total - p.done
 
@@ -359,8 +359,8 @@ func statusBucket(code string) string {
 	}
 }
 
-func statusDisplay(code string) (string, string) {
-	switch statusBucket(code) {
+func statusDisplay(report accountReport) (string, string) {
+	switch statusBucket(report.StatusCode) {
 	case "alive":
 		return "存活", ansiGreen
 	case "limited":
@@ -370,9 +370,27 @@ func statusDisplay(code string) (string, string) {
 	case "frozen":
 		return "冻结", ansiBlue
 	case "failed":
-		return "失败", ansiRed
+		return failureDisplay(report), ansiRed
 	default:
 		return "未知", ansiCyan
+	}
+}
+
+func failureDisplay(report accountReport) string {
+	if report.StatusCode == "unauthorized" {
+		return "失效"
+	}
+
+	text := strings.ToLower(strings.TrimSpace(report.Error + " " + report.Summary))
+	switch {
+	case strings.Contains(text, "timeout"), strings.Contains(text, "deadline"):
+		return "超时"
+	case strings.Contains(text, "flood"), strings.Contains(text, "limit"):
+		return "限流"
+	case strings.Contains(text, "connect"), strings.Contains(text, "network"), strings.Contains(text, "eof"):
+		return "连接失败"
+	default:
+		return "失败"
 	}
 }
 
