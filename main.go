@@ -1145,6 +1145,9 @@ func runSessionCheck(ctx context.Context, mode string, appID int, appHash string
 	self, rawText, code, summary, alive, canSend, err := runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, dialContext)
 	if pool != nil && proxyEntry != nil {
 		fallbackToDirect := pool.reportResult(proxyEntry, err)
+		if !fallbackToDirect && mode != "alive" && err == nil && statusBucket(code) == "unknown" {
+			fallbackToDirect = true
+		}
 		if fallbackToDirect {
 			self, rawText, code, summary, alive, canSend, err = runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, nil)
 			return self, rawText, code, summary, alive, canSend, "回退直连", err
