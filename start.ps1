@@ -101,6 +101,30 @@ function New-InputListFile([string[]]$paths) {
     return $tempFile
 }
 
+function Get-SafeFolderName([string]$name) {
+    $safeName = [string]::IsNullOrWhiteSpace($name) ? "检查结果" : $name.Trim()
+    foreach ($char in [System.IO.Path]::GetInvalidFileNameChars()) {
+        $safeName = $safeName.Replace($char, "_")
+    }
+    $safeName = $safeName -replace '\s+', '_'
+    $safeName = $safeName.Trim('_', '.')
+    if ([string]::IsNullOrWhiteSpace($safeName)) {
+        return "检查结果"
+    }
+    return $safeName
+}
+
+function Get-InputBaseName([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) {
+        return "检查结果"
+    }
+    $item = Get-Item -LiteralPath $path
+    if ($item.PSIsContainer) {
+        return $item.Name
+    }
+    return [System.IO.Path]::GetFileNameWithoutExtension($item.Name)
+}
+
 function Prompt-InputSource() {
     while ($true) {
         Write-Host ""
@@ -125,6 +149,7 @@ function Prompt-InputSource() {
                         Args = @("-input", $folderPath)
                         Display = $folderPath
                         TempFile = $null
+                        ResultName = (Get-InputBaseName $folderPath)
                     }
                 }
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
@@ -146,6 +171,7 @@ function Prompt-InputSource() {
                             Args = @("-input-list", $inputListFile)
                             Display = ((zh "5aSa5Liq5paH5Lu25aS5") + " (" + $folderPaths.Count + " " + (zh "5Liq") + ")")
                             TempFile = $inputListFile
+                            ResultName = ((zh "5aSa5Liq5paH5Lu25aS5") + "_" + $folderPaths.Count + (zh "5Liq"))
                         }
                     }
                 }
@@ -158,6 +184,7 @@ function Prompt-InputSource() {
                         Args = @("-input", $selectedPath)
                         Display = $selectedPath
                         TempFile = $null
+                        ResultName = (Get-InputBaseName $selectedPath)
                     }
                 }
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
@@ -169,6 +196,7 @@ function Prompt-InputSource() {
                         Args = @("-input", $manualPath)
                         Display = $manualPath
                         TempFile = $null
+                        ResultName = (Get-InputBaseName $manualPath)
                     }
                 }
                 Write-Host (zh "6Lev5b6E5LiN5a2Y5Zyo77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
@@ -195,9 +223,10 @@ function Prompt-OutputDir([string]$defaultOutput) {
     return $defaultOutput
 }
 
-function New-RunOutputDir([string]$outputRoot) {
+function New-RunOutputDir([string]$outputRoot, [string]$runName) {
     $runFolder = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-    $runOutputDir = Join-Path $outputRoot $runFolder
+    $safeRunName = Get-SafeFolderName $runName
+    $runOutputDir = Join-Path $outputRoot ($safeRunName + "_" + $runFolder)
     New-Item -ItemType Directory -Path $runOutputDir -Force | Out-Null
     return $runOutputDir
 }
@@ -212,13 +241,14 @@ while ($true) {
         $inputArgs = @($inputInfo.Args)
         $inputDisplay = $inputInfo.Display
         $tempInputListFile = $inputInfo.TempFile
+        $resultName = $inputInfo.ResultName
         $defaultOutputRoot = Join-Path $scriptDir "output"
         $outputRoot = Prompt-OutputDir $defaultOutputRoot
 
         if (-not (Test-Path -LiteralPath $outputRoot)) {
             New-Item -ItemType Directory -Path $outputRoot | Out-Null
         }
-        $outputDir = New-RunOutputDir $outputRoot
+        $outputDir = New-RunOutputDir $outputRoot $resultName
 
         Write-Host ""
         Write-Host (zh "5byA5aeL5omn6KGM77ya") -ForegroundColor Cyan

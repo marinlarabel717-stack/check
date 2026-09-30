@@ -72,9 +72,40 @@ prompt_output() {
   OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 }
 
+sanitize_name() {
+  local name="${1:-}"
+  name="${name//\\/_}"
+  name="${name//\//_}"
+  name="${name//:/_}"
+  name="${name//\*/_}"
+  name="${name//\?/_}"
+  name="${name//\"/_}"
+  name="${name//</_}"
+  name="${name//>/_}"
+  name="${name//|/_}"
+  name="${name// /_}"
+  if [[ -z "$name" ]]; then
+    name="check_result"
+  fi
+  printf '%s' "$name"
+}
+
+derive_run_name() {
+  local input_path="$1"
+  local base
+  if [[ -d "$input_path" ]]; then
+    base="$(basename "$input_path")"
+  else
+    base="$(basename "$input_path")"
+    base="${base%.*}"
+  fi
+  sanitize_name "$base"
+}
+
 run_cli() {
   mkdir -p "$OUTPUT_DIR"
-  RUN_OUTPUT_DIR="$OUTPUT_DIR/$(date +%Y-%m-%d_%H-%M-%S)"
+  RUN_NAME="$(derive_run_name "$INPUT_PATH")"
+  RUN_OUTPUT_DIR="$OUTPUT_DIR/${RUN_NAME}_$(date +%Y-%m-%d_%H-%M-%S)"
   mkdir -p "$RUN_OUTPUT_DIR"
   cd "$SCRIPT_DIR"
 
