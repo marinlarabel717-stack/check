@@ -1093,7 +1093,7 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 
 	if info.IsDir() {
 		if isTDataDir(input) {
-			return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input, SourceKind: "tdata"}}, nil, nil
+			return []sessionCandidate{{Name: candidateNameForPath(input, "tdata"), SourcePath: input, SourceKind: "tdata"}}, nil, nil
 		}
 		files := make([]sessionCandidate, 0)
 		err := filepath.WalkDir(input, func(path string, d fs.DirEntry, walkErr error) error {
@@ -1102,7 +1102,7 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 			}
 			if d.IsDir() {
 				if path != input && isTDataDir(path) {
-					files = append(files, sessionCandidate{Name: d.Name(), SourcePath: path, SourceKind: "tdata"})
+					files = append(files, sessionCandidate{Name: candidateNameForPath(path, "tdata"), SourcePath: path, SourceKind: "tdata"})
 					return fs.SkipDir
 				}
 				return nil
@@ -1123,7 +1123,7 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 	lower := strings.ToLower(info.Name())
 	switch {
 	case isTDataDir(input):
-		return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input, SourceKind: "tdata"}}, nil, nil
+		return []sessionCandidate{{Name: candidateNameForPath(input, "tdata"), SourcePath: input, SourceKind: "tdata"}}, nil, nil
 	case strings.HasSuffix(lower, ".session") && !strings.HasSuffix(lower, ".session-journal"):
 		return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input, SourceKind: "session"}}, nil, nil
 	case strings.HasSuffix(lower, ".zip"):
@@ -1168,6 +1168,20 @@ func isTDataDir(path string) bool {
 		}
 	}
 	return false
+}
+
+func candidateNameForPath(path, sourceKind string) string {
+	base := strings.TrimSpace(filepath.Base(path))
+	if sourceKind == "tdata" && strings.EqualFold(base, "tdata") {
+		parent := strings.TrimSpace(filepath.Base(filepath.Dir(path)))
+		if parent != "" && parent != "." && parent != string(filepath.Separator) {
+			return parent
+		}
+	}
+	if base != "" {
+		return base
+	}
+	return path
 }
 
 func runSessionCheck(ctx context.Context, mode string, appID int, appHash string, pool *proxyPool, sessionFile string) (*probeSelf, string, string, string, bool, bool, string, error) {
