@@ -302,11 +302,12 @@ function Prompt-InputSource() {
     while ($true) {
         Write-Host ""
         Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
-        Write-Host (" " + (zh "MS4g6YCJ5oupIHNlc3Npb24g5paH5Lu25aS5")) -ForegroundColor White
-        Write-Host (" " + (zh "Mi4g6YCJ5oup5aSa5Liq5paH5Lu25aS5")) -ForegroundColor White
+        Write-Host (" " + (zh "MS4g6YCJ5oup5Y2V5LiqIC5zZXNzaW9uIOaWh+S7tg==")) -ForegroundColor White
+        Write-Host (" " + (zh "Mi4g6YCJ5oup5LiA5Liq5oiW5aSa5LiqIHNlc3Npb24vdGRhdGEg5paH5Lu25aS5")) -ForegroundColor White
         Write-Host (" " + (zh "My4g6YCJ5oupIC56aXAg5Y6L57yp5YyF")) -ForegroundColor White
-        Write-Host (" " + (zh "NC4g5omL5Yqo6L6T5YWl6Lev5b6E")) -ForegroundColor White
+        Write-Host (" " + (zh "NC4g5omL5Yqo6L6T5YWl6Lev5b6E77yI5pSv5oyBIC5zZXNzaW9uIC8gdGRhdGEgLyDnm67lvZUgLyAuemlw77yJ")) -ForegroundColor White
         Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
+        Write-Host (" " + (zh "dGRhdGEg5paH5Lu25aS56K+36YCJ56ysIDIg6aG55oiW56ysIDQg6aG5")) -ForegroundColor DarkCyan
 
         $choice = Read-Host (zh "6K+36YCJ5oup6L6T5YWl57G75Z6LIFsxLTRdICjpu5jorqQgMSk=")
         if ([string]::IsNullOrWhiteSpace($choice)) {
@@ -315,7 +316,7 @@ function Prompt-InputSource() {
 
         switch ($choice) {
             "1" {
-                $selectedPath = Select-FilePath (zh "6K+36YCJ5oup6L+Z5Liq5paH5Lu25aS56YeM55qE5Lu75oSP5LiA5LiqIC5zZXNzaW9uIOaWh+S7tg==") "Session files (*.session)|*.session|All files (*.*)|*.*"
+                $selectedPath = Select-FilePath (zh "6K+36YCJ5oup5LiA5LiqIC5zZXNzaW9uIOaWh+S7tu+8jOaIluaUueeUqOesrCAyLzQg6aG56YCJIHRkYXRhIOaWh+S7tuWkuQ==") "Session files (*.session)|*.session|All files (*.*)|*.*"
                 if ($selectedPath) {
                     $folderPath = Split-Path -Parent $selectedPath
                     return @{
@@ -328,7 +329,7 @@ function Prompt-InputSource() {
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }
             "2" {
-                $folderPaths = @(Select-FolderPaths (zh "6K+36YCJ5oup5aSa5Liq5paH5Lu25aS5"))
+                $folderPaths = @(Select-FolderPaths (zh "6K+36YCJ5oup5LiA5Liq5oiW5aSa5LiqIHNlc3Npb24vdGRhdGEg5paH5Lu25aS5"))
                 if ($folderPaths.Count -gt 0) {
                     $folderMap = @{}
                     foreach ($folderPath in $folderPaths) {

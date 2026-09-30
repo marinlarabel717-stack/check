@@ -575,6 +575,16 @@ func statusDisplay(report accountReport) (string, string) {
 	case "failed":
 		return failureDisplay(report), ansiRed
 	default:
+		if report.StatusCode == "unknown" {
+			switch {
+			case strings.Contains(report.Summary, "未拿到 @SpamBot"):
+				return "无回复", ansiCyan
+			case strings.Contains(report.Summary, "未能明确识别"):
+				return "未识别", ansiCyan
+			case strings.TrimSpace(report.Summary) != "" && strings.TrimSpace(report.Summary) != "未识别状态":
+				return report.Summary, ansiCyan
+			}
+		}
 		switch statusBucket(report.StatusCode) {
 		case "alive":
 			return "存活", ansiGreen
