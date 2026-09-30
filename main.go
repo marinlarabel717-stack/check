@@ -57,25 +57,25 @@ type sessionCandidate struct {
 }
 
 type accountReport struct {
-	FileName    string    `json:"file_name"`
-	Phone       string    `json:"phone,omitempty"`
-	UserID      int64     `json:"user_id,omitempty"`
-	Username    string    `json:"username,omitempty"`
-	DisplayName string    `json:"display_name,omitempty"`
-	StatusCode  string    `json:"status_code"`
-	Alive       bool      `json:"alive"`
-	CanSendDM   bool      `json:"can_send_dm"`
-	Summary     string    `json:"summary"`
-	RawReply    string    `json:"raw_reply,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	Route       string    `json:"route,omitempty"`
-	FreezeSinceDate int    `json:"freeze_since_date,omitempty"`
-	FreezeUntilDate int    `json:"freeze_until_date,omitempty"`
-	FreezeSinceText string `json:"freeze_since_text,omitempty"`
-	FreezeUntilText string `json:"freeze_until_text,omitempty"`
-	FreezeAppealURL string `json:"freeze_appeal_url,omitempty"`
-	CheckedAt   time.Time `json:"checked_at"`
-	SourcePath  string    `json:"source_path"`
+	FileName        string    `json:"file_name"`
+	Phone           string    `json:"phone,omitempty"`
+	UserID          int64     `json:"user_id,omitempty"`
+	Username        string    `json:"username,omitempty"`
+	DisplayName     string    `json:"display_name,omitempty"`
+	StatusCode      string    `json:"status_code"`
+	Alive           bool      `json:"alive"`
+	CanSendDM       bool      `json:"can_send_dm"`
+	Summary         string    `json:"summary"`
+	RawReply        string    `json:"raw_reply,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	Route           string    `json:"route,omitempty"`
+	FreezeSinceDate int       `json:"freeze_since_date,omitempty"`
+	FreezeUntilDate int       `json:"freeze_until_date,omitempty"`
+	FreezeSinceText string    `json:"freeze_since_text,omitempty"`
+	FreezeUntilText string    `json:"freeze_until_text,omitempty"`
+	FreezeAppealURL string    `json:"freeze_appeal_url,omitempty"`
+	CheckedAt       time.Time `json:"checked_at"`
+	SourcePath      string    `json:"source_path"`
 }
 
 type probeSelf struct {
@@ -1160,13 +1160,13 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 	flow := auth.NewFlow(importOnlyAuth{}, auth.SendCodeOptions{})
 
 	var (
-		self    *probeSelf
-		rawText string
-		code    string
-		summary string
+		self       *probeSelf
+		rawText    string
+		code       string
+		summary    string
 		freezeInfo freezeMetadata
-		alive   bool
-		canSend bool
+		alive      bool
+		canSend    bool
 	)
 	err := client.Run(ctx, func(ctx context.Context) error {
 		if err := client.Auth().IfNecessary(ctx, flow); err != nil {
