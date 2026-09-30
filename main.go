@@ -429,7 +429,8 @@ func (p *progressTracker) record(report accountReport) {
 	defer p.mu.Unlock()
 
 	p.done++
-	if report.Alive {
+	switch statusBucket(report.StatusCode) {
+	case "alive", "geo", "limited":
 		p.live++
 	}
 
