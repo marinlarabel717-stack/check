@@ -25,6 +25,7 @@ import (
 
 	"github.com/gotd/td/crypto"
 	gsession "github.com/gotd/td/session"
+	tdesktop "github.com/gotd/td/session/tdesktop"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/dcs"
@@ -49,6 +50,7 @@ type config struct {
 type sessionCandidate struct {
 	Name       string
 	SourcePath string
+	SourceKind string
 }
 
 type accountReport struct {
@@ -620,19 +622,28 @@ func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandid
 	}
 	defer os.RemoveAll(tmpDir)
 
-	sourceCopy := filepath.Join(tmpDir, candidate.Name)
-	if err := copyFile(candidate.SourcePath, sourceCopy); err != nil {
-		report.Error = fmt.Sprintf("复制 session 失败: %v", err)
-		report.Summary = report.Error
-		return report
-	}
-
 	gotdSession := filepath.Join(tmpDir, "session.json")
-	if err := convertTelethonSQLiteSessionFile(ctx, sourceCopy, gotdSession); err != nil {
-		report.StatusCode = "unauthorized"
-		report.Error = fmt.Sprintf("session 转换失败: %v", err)
-		report.Summary = "session 未授权、已损坏，或不是有效的 Telethon sqlite session"
-		return report
+	switch candidate.SourceKind {
+	case "tdata":
+		if err := convertTDataDir(ctx, candidate.SourcePath, gotdSession); err != nil {
+			report.StatusCode = "unauthorized"
+			report.Error = fmt.Sprintf("tdata 转换失败: %v", err)
+			report.Summary = "tdata 未授权、已损坏，或不是有效的 Telegram Desktop 数据"
+			return report
+		}
+	default:
+		sourceCopy := filepath.Join(tmpDir, candidate.Name)
+		if err := copyFile(candidate.SourcePath, sourceCopy); err != nil {
+			report.Error = fmt.Sprintf("复制 session 失败: %v", err)
+			report.Summary = report.Error
+			return report
+		}
+		if err := convertTelethonSQLiteSessionFile(ctx, sourceCopy, gotdSession); err != nil {
+			report.StatusCode = "unauthorized"
+			report.Error = fmt.Sprintf("session 转换失败: %v", err)
+			report.Summary = "session 未授权、已损坏，或不是有效的 Telethon sqlite session"
+			return report
+		}
 	}
 
 	self, rawReply, code, summary, alive, canSend, route, err := runSessionCheck(ctx, cfg.mode, cfg.appID, cfg.appHash, cfg.proxyPool, gotdSession)
@@ -780,16 +791,8 @@ func writeZipByFilter(path string, reports []accountReport, keep func(accountRep
 		if !keep(report) || strings.TrimSpace(report.SourcePath) == "" {
 			continue
 		}
-		data, err := os.ReadFile(report.SourcePath)
-		if err != nil {
-			continue
-		}
 		name := uniqueZipName(usedNames, report.FileName)
-		entry, err := writer.Create(name)
-		if err != nil {
-			return err
-		}
-		if _, err := entry.Write(data); err != nil {
+		if err := writeZipSource(writer, name, report.SourcePath); err != nil {
 			return err
 		}
 	}
@@ -809,6 +812,54 @@ func uniqueZipName(used map[string]int, name string) string {
 	stem := strings.TrimSuffix(base, ext)
 	used[base]++
 	return fmt.Sprintf("%s_%d%s", stem, used[base], ext)
+}
+
+func writeZipSource(writer *zip.Writer, name, sourcePath string) error {
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return writeZipDir(writer, name, sourcePath)
+	}
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return err
+	}
+	entry, err := writer.Create(name)
+	if err != nil {
+		return err
+	}
+	_, err = entry.Write(data)
+	return err
+}
+
+func writeZipDir(writer *zip.Writer, rootName, sourceDir string) error {
+	return filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		zipPath := filepath.ToSlash(filepath.Join(rootName, relPath))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		entry, err := writer.Create(zipPath)
+		if err != nil {
+			return err
+		}
+		if _, err := entry.Write(data); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func printFinalSummary(reports []accountReport, outputDir string) {
@@ -972,17 +1023,24 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 	}
 
 	if info.IsDir() {
+		if isTDataDir(input) {
+			return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input, SourceKind: "tdata"}}, nil, nil
+		}
 		files := make([]sessionCandidate, 0)
 		err := filepath.WalkDir(input, func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
 			if d.IsDir() {
+				if path != input && isTDataDir(path) {
+					files = append(files, sessionCandidate{Name: d.Name(), SourcePath: path, SourceKind: "tdata"})
+					return fs.SkipDir
+				}
 				return nil
 			}
 			lower := strings.ToLower(d.Name())
 			if strings.HasSuffix(lower, ".session") && !strings.HasSuffix(lower, ".session-journal") {
-				files = append(files, sessionCandidate{Name: d.Name(), SourcePath: path})
+				files = append(files, sessionCandidate{Name: d.Name(), SourcePath: path, SourceKind: "session"})
 			}
 			return nil
 		})
@@ -992,8 +1050,10 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 
 	lower := strings.ToLower(info.Name())
 	switch {
+	case isTDataDir(input):
+		return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input, SourceKind: "tdata"}}, nil, nil
 	case strings.HasSuffix(lower, ".session") && !strings.HasSuffix(lower, ".session-journal"):
-		return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input}}, nil, nil
+		return []sessionCandidate{{Name: filepath.Base(input), SourcePath: input, SourceKind: "session"}}, nil, nil
 	case strings.HasSuffix(lower, ".zip"):
 		data, err := os.ReadFile(input)
 		if err != nil {
@@ -1015,12 +1075,22 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 				_ = os.RemoveAll(tmpDir)
 				return nil, nil, err
 			}
-			candidates = append(candidates, sessionCandidate{Name: file.Name, SourcePath: target})
+			candidates = append(candidates, sessionCandidate{Name: file.Name, SourcePath: target, SourceKind: "session"})
 		}
 		return candidates, func() { _ = os.RemoveAll(tmpDir) }, nil
 	default:
 		return nil, nil, fmt.Errorf("仅支持目录、.session 或 .zip 输入")
 	}
+}
+
+func isTDataDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	keyDataPath := filepath.Join(path, "key_data")
+	keyInfo, err := os.Stat(keyDataPath)
+	return err == nil && !keyInfo.IsDir()
 }
 
 func runSessionCheck(ctx context.Context, mode string, appID int, appHash string, pool *proxyPool, sessionFile string) (*probeSelf, string, string, string, bool, bool, string, error) {
@@ -1312,6 +1382,27 @@ func convertTelethonSQLiteSessionFile(ctx context.Context, sourcePath, targetPat
 		return fmt.Errorf("create session dir: %w", err)
 	}
 
+	loader := gsession.Loader{
+		Storage: &gsession.FileStorage{Path: targetPath},
+	}
+	return loader.Save(ctx, data)
+}
+
+func convertTDataDir(ctx context.Context, sourcePath, targetPath string) error {
+	accounts, err := tdesktop.Read(sourcePath, nil)
+	if err != nil {
+		return fmt.Errorf("read tdata: %w", err)
+	}
+	if len(accounts) == 0 {
+		return fmt.Errorf("tdata 中没有可用账号")
+	}
+	data, err := gsession.TDesktopSession(accounts[0])
+	if err != nil {
+		return fmt.Errorf("convert tdata: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		return fmt.Errorf("create session dir: %w", err)
+	}
 	loader := gsession.Loader{
 		Storage: &gsession.FileStorage{Path: targetPath},
 	}
