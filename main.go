@@ -62,6 +62,7 @@ type accountReport struct {
 	Summary     string    `json:"summary"`
 	RawReply    string    `json:"raw_reply,omitempty"`
 	Error       string    `json:"error,omitempty"`
+	Route       string    `json:"route,omitempty"`
 	CheckedAt   time.Time `json:"checked_at"`
 	SourcePath  string    `json:"source_path"`
 }
@@ -341,8 +342,6 @@ func runChecks(cfg config, candidates []sessionCandidate) []accountReport {
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	tracker := newProgressTracker(len(candidates))
-	stopHeartbeat := tracker.startHeartbeat(3 * time.Second)
-	defer stopHeartbeat()
 
 	workerCount := cfg.workers
 	if workerCount > len(candidates) {
@@ -427,12 +426,14 @@ func (p *progressTracker) record(report accountReport) {
 
 	statusText, statusColor := statusDisplay(report)
 	phone := displayPhone(report)
+	routeText, routeColor := routeDisplay(report.Route)
 	pending := p.total - p.done
 
 	fmt.Printf(
-		"%s【%s】%s %s  %s%s%s  当前存活%d  待检查%d\n",
+		"%s【%s】%s %s  %s%s%s  %s%s%s  当前存活%d  待检查%d\n",
 		ansiGray, formatLineTime(time.Now()), ansiReset,
 		phone,
+		routeColor, routeText, ansiReset,
 		statusColor, statusText, ansiReset,
 		p.alive,
 		pending,
@@ -549,6 +550,17 @@ func statusDisplay(report accountReport) (string, string) {
 	}
 }
 
+func routeDisplay(route string) (string, string) {
+	switch strings.TrimSpace(route) {
+	case "代理":
+		return "代理", ansiCyan
+	case "回退直连":
+		return "回退直连", ansiYellow
+	default:
+		return "直连", ansiGray
+	}
+}
+
 func failureDisplay(report accountReport) string {
 	if report.StatusCode == "unauthorized" {
 		return "失效"
@@ -622,7 +634,7 @@ func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandid
 		return report
 	}
 
-	self, rawReply, code, summary, alive, canSend, err := runSessionCheck(ctx, cfg.mode, cfg.appID, cfg.appHash, cfg.proxyPool, gotdSession)
+	self, rawReply, code, summary, alive, canSend, route, err := runSessionCheck(ctx, cfg.mode, cfg.appID, cfg.appHash, cfg.proxyPool, gotdSession)
 	if self != nil {
 		report.Phone = self.Phone
 		report.UserID = self.ID
@@ -634,6 +646,7 @@ func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandid
 	report.StatusCode = code
 	report.CanSendDM = canSend
 	report.Summary = summary
+	report.Route = route
 	if err != nil {
 		report.Error = classifyError(err)
 		if report.StatusCode == "" {
@@ -723,7 +736,7 @@ func writeCSV(path string, reports []accountReport) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	header := []string{"file_name", "phone", "user_id", "username", "display_name", "status_code", "alive", "can_send_dm", "summary", "raw_reply", "error", "checked_at", "source_path"}
+	header := []string{"file_name", "phone", "user_id", "username", "display_name", "status_code", "route", "alive", "can_send_dm", "summary", "raw_reply", "error", "checked_at", "source_path"}
 	if err := writer.Write(header); err != nil {
 		return err
 	}
@@ -735,6 +748,7 @@ func writeCSV(path string, reports []accountReport) error {
 			report.Username,
 			report.DisplayName,
 			report.StatusCode,
+			report.Route,
 			strconv.FormatBool(report.Alive),
 			strconv.FormatBool(report.CanSendDM),
 			report.Summary,
@@ -940,16 +954,18 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 	}
 }
 
-func runSessionCheck(ctx context.Context, mode string, appID int, appHash string, pool *proxyPool, sessionFile string) (*probeSelf, string, string, string, bool, bool, error) {
+func runSessionCheck(ctx context.Context, mode string, appID int, appHash string, pool *proxyPool, sessionFile string) (*probeSelf, string, string, string, bool, bool, string, error) {
 	dialContext, proxyEntry := pool.nextDialer()
 	self, rawText, code, summary, alive, canSend, err := runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, dialContext)
 	if pool != nil && proxyEntry != nil {
 		fallbackToDirect := pool.reportResult(proxyEntry, err)
 		if fallbackToDirect {
-			return runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, nil)
+			self, rawText, code, summary, alive, canSend, err = runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, nil)
+			return self, rawText, code, summary, alive, canSend, "回退直连", err
 		}
+		return self, rawText, code, summary, alive, canSend, "代理", err
 	}
-	return self, rawText, code, summary, alive, canSend, err
+	return self, rawText, code, summary, alive, canSend, "直连", err
 }
 
 func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, sessionFile string, dialContext func(context.Context, string, string) (net.Conn, error)) (*probeSelf, string, string, string, bool, bool, error) {
