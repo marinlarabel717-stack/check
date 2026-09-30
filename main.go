@@ -30,7 +30,9 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/dcs"
+	"github.com/gotd/td/telegram/tljson"
 	mtproto "github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 	"golang.org/x/net/proxy"
 	_ "modernc.org/sqlite"
 )
@@ -67,6 +69,11 @@ type accountReport struct {
 	RawReply    string    `json:"raw_reply,omitempty"`
 	Error       string    `json:"error,omitempty"`
 	Route       string    `json:"route,omitempty"`
+	FreezeSinceDate int    `json:"freeze_since_date,omitempty"`
+	FreezeUntilDate int    `json:"freeze_until_date,omitempty"`
+	FreezeSinceText string `json:"freeze_since_text,omitempty"`
+	FreezeUntilText string `json:"freeze_until_text,omitempty"`
+	FreezeAppealURL string `json:"freeze_appeal_url,omitempty"`
 	CheckedAt   time.Time `json:"checked_at"`
 	SourcePath  string    `json:"source_path"`
 }
@@ -77,6 +84,14 @@ type probeSelf struct {
 	Username  string
 	FirstName string
 	LastName  string
+}
+
+type freezeMetadata struct {
+	FreezeSinceDate int
+	FreezeUntilDate int
+	FreezeSinceText string
+	FreezeUntilText string
+	FreezeAppealURL string
 }
 
 type importedSessionFile struct {
@@ -551,7 +566,7 @@ func statusDisplay(report accountReport) (string, string) {
 	case "banned":
 		return "封禁", ansiRed
 	case "frozen":
-		if strings.HasPrefix(report.Summary, "冻结至 ") {
+		if strings.HasPrefix(report.Summary, "冻结") {
 			return report.Summary, ansiBlue
 		}
 		return "冻结", ansiBlue
@@ -1149,6 +1164,7 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 		rawText string
 		code    string
 		summary string
+		freezeInfo freezeMetadata
 		alive   bool
 		canSend bool
 	)
@@ -1177,11 +1193,26 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 			return nil
 		}
 
+		freezeInfo, _ = fetchFreezeMetadata(ctx, api)
+		if freezeInfo.HasState() {
+			code = "frozen"
+			summary = freezeInfo.StatusSummary()
+			canSend = false
+			return nil
+		}
+
 		peer, err := resolveUsernamePeer(ctx, api, "SpamBot")
 		if err != nil {
 			return fmt.Errorf("无法定位 @SpamBot: %w", err)
 		}
 		if err := sendText(ctx, api, peer, "/start"); err != nil {
+			if isFrozenRPCError(err) {
+				freezeInfo, _ = fetchFreezeMetadata(ctx, api)
+				code = "frozen"
+				summary = freezeInfo.StatusSummary()
+				canSend = false
+				return nil
+			}
 			return fmt.Errorf("无法向 @SpamBot 发起检测: %w", err)
 		}
 
@@ -1196,6 +1227,13 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 			Limit: 5,
 		})
 		if err != nil {
+			if isFrozenRPCError(err) {
+				freezeInfo, _ = fetchFreezeMetadata(ctx, api)
+				code = "frozen"
+				summary = freezeInfo.StatusSummary()
+				canSend = false
+				return nil
+			}
 			return fmt.Errorf("读取 @SpamBot 回复失败: %w", err)
 		}
 
@@ -1205,12 +1243,101 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 			return nil
 		}
 		code, summary, canSend = interpretSpamBotStatus(rawText)
+		if code == "frozen" {
+			if meta, err := fetchFreezeMetadata(ctx, api); err == nil && meta.HasState() {
+				freezeInfo = meta
+				summary = freezeInfo.StatusSummary()
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return self, rawText, classifyStatusCode(err), classifyError(err), alive, false, err
 	}
 	return self, rawText, code, summary, alive, canSend, nil
+}
+
+func (m freezeMetadata) HasState() bool {
+	return m.FreezeSinceDate > 0 || m.FreezeUntilDate > 0
+}
+
+func (m freezeMetadata) StatusSummary() string {
+	switch {
+	case m.FreezeSinceText != "" && m.FreezeUntilText != "":
+		return "冻结自 " + m.FreezeSinceText + "，删号至 " + m.FreezeUntilText
+	case m.FreezeSinceText != "":
+		return "冻结自 " + m.FreezeSinceText
+	case m.FreezeUntilText != "":
+		return "冻结，删号至 " + m.FreezeUntilText
+	default:
+		return "冻结"
+	}
+}
+
+func fetchFreezeMetadata(ctx context.Context, api *mtproto.Client) (freezeMetadata, error) {
+	result, err := api.HelpGetAppConfig(ctx, 0)
+	if err != nil {
+		return freezeMetadata{}, err
+	}
+
+	appConfig, ok := result.(*mtproto.HelpAppConfig)
+	if !ok || appConfig == nil || appConfig.Config == nil {
+		return freezeMetadata{}, nil
+	}
+
+	var decoded tljson.AppConfig
+	if err := decoded.DecodeJSONValue(appConfig.Config); err != nil {
+		return freezeMetadata{}, err
+	}
+
+	meta := freezeMetadata{
+		FreezeSinceDate: readJSONValueInt(decoded.Unparsed["freeze_since_date"]),
+		FreezeUntilDate: readJSONValueInt(decoded.Unparsed["freeze_until_date"]),
+		FreezeAppealURL: strings.TrimSpace(readJSONValueString(decoded.Unparsed["freeze_appeal_url"])),
+	}
+	meta.FreezeSinceText = formatUnixTimestamp(meta.FreezeSinceDate)
+	meta.FreezeUntilText = formatUnixTimestamp(meta.FreezeUntilDate)
+	return meta, nil
+}
+
+func readJSONValueInt(value mtproto.JSONValueClass) int {
+	switch v := value.(type) {
+	case *mtproto.JSONNumber:
+		return int(v.Value)
+	case *mtproto.JSONString:
+		text := strings.TrimSpace(v.Value)
+		if text == "" {
+			return 0
+		}
+		if n, err := strconv.Atoi(text); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+func readJSONValueString(value mtproto.JSONValueClass) string {
+	switch v := value.(type) {
+	case *mtproto.JSONString:
+		return v.Value
+	case *mtproto.JSONNumber:
+		return strconv.FormatInt(int64(v.Value), 10)
+	}
+	return ""
+}
+
+func formatUnixTimestamp(value int) string {
+	if value <= 0 {
+		return ""
+	}
+	return time.Unix(int64(value), 0).Local().Format("2006-01-02 15:04:05 MST")
+}
+
+func isFrozenRPCError(err error) bool {
+	if rpcErr, ok := tgerr.As(err); ok {
+		return rpcErr.IsOneOf("FROZEN_METHOD_INVALID", "FROZEN_PARTICIPANT_MISSING")
+	}
+	return false
 }
 
 func isPassed(report accountReport) bool {
