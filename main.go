@@ -159,7 +159,7 @@ func main() {
 		defer cleanup()
 	}
 	if len(candidates) == 0 {
-		log.Fatalf("没有找到可检查的 .session 文件")
+		log.Fatalf("没有找到可检查的 .session 或 tdata（tdata 目录内需包含 key_data）")
 	}
 
 	log.Printf("开始检查，共 %d 个 session，workers=%d", len(candidates), cfg.workers)
@@ -1114,6 +1114,9 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 			return nil
 		})
 		sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+		if len(files) == 0 {
+			return nil, nil, fmt.Errorf("目录中未找到可检查的 .session 或 tdata（tdata 目录内需包含 key_data）")
+		}
 		return files, nil, err
 	}
 
