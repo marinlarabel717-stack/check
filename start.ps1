@@ -238,10 +238,10 @@ if (-not (Test-Path -LiteralPath $proxyFile)) {
 
 function Get-ProxyDisplayText([string]$path) {
     if ([string]::IsNullOrWhiteSpace($path)) {
-        return "直连"
+        return (zh "55u06L+e")
     }
     if (-not (Test-Path -LiteralPath $path)) {
-        return "直连 (未找到 proxy.txt)"
+        return (zh "55u06L+eICjmnKrmib7liLAgcHJveHkudHh0KQ==")
     }
 
     try {
@@ -257,7 +257,7 @@ function Get-ProxyDisplayText([string]$path) {
         }
     }
 
-    return "直连 (proxy.txt 为空)"
+    return (zh "55u06L+eIChwcm94eS50eHQg5Li656m6KQ==")
 }
 
 function Prompt-Mode() {
@@ -474,7 +474,7 @@ while ($true) {
             if ($mainGoPath -and (Test-Path -LiteralPath $mainGoPath)) {
                 $latestReferenceTime = (Get-Item -LiteralPath $mainGoPath).LastWriteTimeUtc
                 if ($exeInfo.LastWriteTimeUtc -lt $latestReferenceTime) {
-                    Write-Host "警告：当前 exe 时间早于脚本/源码，可能菜单已更新，但核心二进制还是旧版。" -ForegroundColor Yellow
+                    Write-Host "WARNING: exe is older than main.go; core binary may be stale." -ForegroundColor Yellow
                     Write-Host ("  EXE: " + $exeInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")) -ForegroundColor DarkYellow
                     Write-Host ("  REF: " + $latestReferenceTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")) -ForegroundColor DarkYellow
                     Write-Host ""
