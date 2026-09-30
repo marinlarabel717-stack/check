@@ -172,6 +172,8 @@ func runChecks(cfg config, candidates []sessionCandidate) []accountReport {
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	tracker := newProgressTracker(len(candidates))
+	stopHeartbeat := tracker.startHeartbeat(3 * time.Second)
+	defer stopHeartbeat()
 
 	workerCount := cfg.workers
 	if workerCount > len(candidates) {
@@ -211,6 +213,28 @@ func newProgressTracker(total int) *progressTracker {
 	}
 }
 
+func (p *progressTracker) startHeartbeat(interval time.Duration) func() {
+	p.printHeartbeat(true)
+
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				p.printHeartbeat(false)
+			case <-stop:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		close(stop)
+	}
+}
+
 func (p *progressTracker) record(report accountReport) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -232,10 +256,65 @@ func (p *progressTracker) record(report accountReport) {
 		p.unknown++
 	}
 
-	done := p.done
-	total := p.total
-	elapsed := time.Since(p.started).Round(time.Second)
-	counts := fmt.Sprintf(
+	statusText, statusColor := statusDisplay(report.StatusCode)
+	phone := displayPhone(report)
+	pending := p.total - p.done
+
+	fmt.Printf(
+		"%s【%s】%s %s  %s%s%s  当前存活%d  待检查%d\n",
+		ansiGray, formatLineTime(time.Now()), ansiReset,
+		phone,
+		statusColor, statusText, ansiReset,
+		p.alive,
+		pending,
+	)
+	if p.done == p.total {
+		fmt.Printf("%s耗时%s %s\n", ansiGray, ansiReset, time.Since(p.started).Round(time.Second))
+	}
+}
+
+func (p *progressTracker) printHeartbeat(initial bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.done >= p.total {
+		return
+	}
+
+	label := "进度"
+	if initial || p.done == 0 {
+		label = "预热中"
+	}
+	pending := p.total - p.done
+
+	fmt.Printf(
+		"%s【%s】%s %s%s%s  当前存活%d  待检查%d\n",
+		ansiGray, formatLineTime(time.Now()), ansiReset,
+		ansiYellow, label, ansiReset,
+		p.alive,
+		pending,
+	)
+}
+
+func formatLineTime(t time.Time) string {
+	return t.Format("2006-1-2 -15:04")
+}
+
+func displayPhone(report accountReport) string {
+	if phone := strings.TrimSpace(report.Phone); phone != "" {
+		return phone
+	}
+	if username := strings.TrimSpace(report.Username); username != "" {
+		return "@" + username
+	}
+	if name := strings.TrimSpace(report.FileName); name != "" {
+		return name
+	}
+	return "unknown"
+}
+
+func (p *progressTracker) renderCounts() string {
+	return fmt.Sprintf(
 		"%s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s",
 		ansiGreen, "活", p.alive, ansiReset,
 		ansiYellow, "限", p.limited, ansiReset,
@@ -244,29 +323,6 @@ func (p *progressTracker) record(report accountReport) {
 		ansiRed, "失", p.failed, ansiReset,
 		ansiCyan, "未", p.unknown, ansiReset,
 	)
-
-	statusText, statusColor := statusDisplay(report.StatusCode)
-	identity := displayIdentity(report)
-	summary := strings.TrimSpace(report.Summary)
-	if summary == "" {
-		summary = strings.TrimSpace(report.Error)
-	}
-	if summary == "" {
-		summary = report.StatusCode
-	}
-
-	fmt.Printf(
-		"%s[%d/%d]%s %s[%s]%s %s %s%s%s\n",
-		ansiGray, done, total, ansiReset,
-		statusColor, statusText, ansiReset,
-		counts,
-		identity,
-		ansiGray+" -> ",
-		summary+ansiReset,
-	)
-	if done == total {
-		fmt.Printf("%s耗时%s %s\n", ansiGray, ansiReset, elapsed)
-	}
 }
 
 func displayIdentity(report accountReport) string {
@@ -318,6 +374,29 @@ func statusDisplay(code string) (string, string) {
 	default:
 		return "未知", ansiCyan
 	}
+}
+
+func formatSpeed(done int, elapsed time.Duration) string {
+	if done <= 0 || elapsed <= 0 {
+		return "0 个/分"
+	}
+	perMinute := float64(done) / elapsed.Minutes()
+	return fmt.Sprintf("%.1f 个/分", perMinute)
+}
+
+func formatETA(remaining, done int, elapsed time.Duration) string {
+	if remaining <= 0 {
+		return "0s"
+	}
+	if done <= 0 || elapsed <= 0 {
+		return "--"
+	}
+
+	etaSeconds := elapsed.Seconds() * float64(remaining) / float64(done)
+	if etaSeconds < 1 {
+		etaSeconds = 1
+	}
+	return (time.Duration(etaSeconds) * time.Second).Round(time.Second).String()
 }
 
 func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandidate) accountReport {
