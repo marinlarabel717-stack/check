@@ -76,7 +76,32 @@ type importedSessionFile struct {
 
 type importOnlyAuth struct{}
 
+type progressTracker struct {
+	mu      sync.Mutex
+	total   int
+	done    int
+	alive   int
+	limited int
+	banned  int
+	frozen  int
+	failed  int
+	unknown int
+	started time.Time
+}
+
+const (
+	ansiReset  = "\x1b[0m"
+	ansiGray   = "\x1b[90m"
+	ansiGreen  = "\x1b[32m"
+	ansiYellow = "\x1b[33m"
+	ansiBlue   = "\x1b[34m"
+	ansiRed    = "\x1b[31m"
+	ansiCyan   = "\x1b[36m"
+)
+
 func main() {
+	log.SetFlags(0)
+
 	cfg, err := parseConfig()
 	if err != nil {
 		log.Fatalf("参数错误: %v", err)
@@ -146,6 +171,7 @@ func runChecks(cfg config, candidates []sessionCandidate) []accountReport {
 	reports := make([]accountReport, len(candidates))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
+	tracker := newProgressTracker(len(candidates))
 
 	workerCount := cfg.workers
 	if workerCount > len(candidates) {
@@ -158,8 +184,10 @@ func runChecks(cfg config, candidates []sessionCandidate) []accountReport {
 			defer wg.Done()
 			for idx := range jobs {
 				ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
-				reports[idx] = checkSingleSession(ctx, cfg, candidates[idx])
+				report := checkSingleSession(ctx, cfg, candidates[idx])
 				cancel()
+				reports[idx] = report
+				tracker.record(report)
 			}
 		}()
 	}
@@ -174,6 +202,122 @@ func runChecks(cfg config, candidates []sessionCandidate) []accountReport {
 		return reports[i].FileName < reports[j].FileName
 	})
 	return reports
+}
+
+func newProgressTracker(total int) *progressTracker {
+	return &progressTracker{
+		total:   total,
+		started: time.Now(),
+	}
+}
+
+func (p *progressTracker) record(report accountReport) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.done++
+
+	switch statusBucket(report.StatusCode) {
+	case "alive":
+		p.alive++
+	case "limited":
+		p.limited++
+	case "banned":
+		p.banned++
+	case "frozen":
+		p.frozen++
+	case "failed":
+		p.failed++
+	default:
+		p.unknown++
+	}
+
+	done := p.done
+	total := p.total
+	elapsed := time.Since(p.started).Round(time.Second)
+	counts := fmt.Sprintf(
+		"%s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s",
+		ansiGreen, "活", p.alive, ansiReset,
+		ansiYellow, "限", p.limited, ansiReset,
+		ansiRed, "封", p.banned, ansiReset,
+		ansiBlue, "冻", p.frozen, ansiReset,
+		ansiRed, "失", p.failed, ansiReset,
+		ansiCyan, "未", p.unknown, ansiReset,
+	)
+
+	statusText, statusColor := statusDisplay(report.StatusCode)
+	identity := displayIdentity(report)
+	summary := strings.TrimSpace(report.Summary)
+	if summary == "" {
+		summary = strings.TrimSpace(report.Error)
+	}
+	if summary == "" {
+		summary = report.StatusCode
+	}
+
+	fmt.Printf(
+		"%s[%d/%d]%s %s[%s]%s %s %s%s%s\n",
+		ansiGray, done, total, ansiReset,
+		statusColor, statusText, ansiReset,
+		counts,
+		identity,
+		ansiGray+" -> ",
+		summary+ansiReset,
+	)
+	if done == total {
+		fmt.Printf("%s耗时%s %s\n", ansiGray, ansiReset, elapsed)
+	}
+}
+
+func displayIdentity(report accountReport) string {
+	parts := make([]string, 0, 3)
+	if name := strings.TrimSpace(report.FileName); name != "" {
+		parts = append(parts, name)
+	}
+	if phone := strings.TrimSpace(report.Phone); phone != "" {
+		parts = append(parts, phone)
+	}
+	if username := strings.TrimSpace(report.Username); username != "" {
+		parts = append(parts, "@"+username)
+	}
+	if len(parts) == 0 {
+		return "unknown"
+	}
+	return strings.Join(parts, " | ")
+}
+
+func statusBucket(code string) string {
+	switch code {
+	case "alive", "active":
+		return "alive"
+	case "restricted", "spam":
+		return "limited"
+	case "banned":
+		return "banned"
+	case "frozen":
+		return "frozen"
+	case "failed", "unauthorized":
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+func statusDisplay(code string) (string, string) {
+	switch statusBucket(code) {
+	case "alive":
+		return "存活", ansiGreen
+	case "limited":
+		return "受限", ansiYellow
+	case "banned":
+		return "封禁", ansiRed
+	case "frozen":
+		return "冻结", ansiBlue
+	case "failed":
+		return "失败", ansiRed
+	default:
+		return "未知", ansiCyan
+	}
 }
 
 func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandidate) accountReport {
