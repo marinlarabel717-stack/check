@@ -119,6 +119,7 @@ type progressTracker struct {
 	total   int
 	done    int
 	alive   int
+	geo     int
 	limited int
 	banned  int
 	frozen  int
@@ -431,6 +432,8 @@ func (p *progressTracker) record(report accountReport) {
 	switch statusBucket(report.StatusCode) {
 	case "alive":
 		p.alive++
+	case "geo":
+		p.geo++
 	case "limited":
 		p.limited++
 	case "banned":
@@ -508,8 +511,9 @@ func displayPhone(report accountReport) string {
 
 func (p *progressTracker) renderCounts() string {
 	return fmt.Sprintf(
-		"%s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s",
+		"%s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s %s[%s %d]%s",
 		ansiGreen, "活", p.alive, ansiReset,
+		ansiYellow, "地", p.geo, ansiReset,
 		ansiYellow, "限", p.limited, ansiReset,
 		ansiRed, "封", p.banned, ansiReset,
 		ansiBlue, "冻", p.frozen, ansiReset,
@@ -539,6 +543,8 @@ func statusBucket(code string) string {
 	switch code {
 	case "alive", "active":
 		return "alive"
+	case "geo":
+		return "geo"
 	case "restricted", "spam", "mutual":
 		return "limited"
 	case "banned":
@@ -558,6 +564,8 @@ func statusDisplay(report accountReport) (string, string) {
 		return "存活", ansiGreen
 	case "active":
 		return "无限制", ansiGreen
+	case "geo":
+		return "地理限制", ansiYellow
 	case "restricted", "spam", "mutual":
 		if strings.HasPrefix(report.Summary, "双向至 ") {
 			return report.Summary, ansiYellow
@@ -588,6 +596,8 @@ func statusDisplay(report accountReport) (string, string) {
 		switch statusBucket(report.StatusCode) {
 		case "alive":
 			return "存活", ansiGreen
+		case "geo":
+			return "地理限制", ansiYellow
 		case "limited":
 			return "双向", ansiYellow
 		case "banned":
@@ -746,6 +756,7 @@ func writeOutputs(outputDir string, reports []accountReport) error {
 		keep func(accountReport) bool
 	}{
 		{name: "存活账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "alive" }},
+		{name: "地理限制账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "geo" }},
 		{name: "双向账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "limited" }},
 		{name: "封禁账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "banned" }},
 		{name: "冻结账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "frozen" }},
@@ -915,6 +926,7 @@ func printFinalSummary(reports []accountReport, outputDir string) {
 	counts := map[string]int{
 		"total":     len(reports),
 		"alive":     0,
+		"geo":       0,
 		"limited":   0,
 		"banned":    0,
 		"frozen":    0,
@@ -930,6 +942,8 @@ func printFinalSummary(reports []accountReport, outputDir string) {
 		switch statusBucket(report.StatusCode) {
 		case "alive":
 			counts["alive"]++
+		case "geo":
+			counts["geo"]++
 		case "limited":
 			counts["limited"]++
 		case "banned":
@@ -958,6 +972,7 @@ func printFinalSummary(reports []accountReport, outputDir string) {
 	fmt.Printf("%s检查完成汇总%s\n", ansiGray, ansiReset)
 	printSummaryLine("总计", counts["total"], ansiGray)
 	printSummaryLine("存活", counts["alive"], ansiGreen)
+	printSummaryLine("地理限制", counts["geo"], ansiYellow)
 	printSummaryLine("双向", counts["limited"], ansiYellow)
 	printSummaryLine("封禁", counts["banned"], ansiRed)
 	printSummaryLine("冻结", counts["frozen"], ansiBlue)
@@ -1437,7 +1452,7 @@ func interpretSpamBotStatus(raw string) (string, string, bool) {
 
 	switch {
 	case containsAny(text, "some phone numbers may trigger a harsh response", "phone numbers may trigger"):
-		return "active", "无限制", true
+		return "geo", "地理限制", false
 	case containsAny(text, "good news, no limits are currently applied", "you're free as a bird", "no limits", "free as a bird", "no restrictions", "all good", "account is free", "not limited"):
 		return "active", "无限制", true
 	case containsAny(text, "mutual contacts", "only people in your contacts", "only send messages to mutual contacts", "双向", "互相添加"):
