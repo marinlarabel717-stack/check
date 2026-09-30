@@ -118,6 +118,7 @@ type progressTracker struct {
 	mu      sync.Mutex
 	total   int
 	done    int
+	live    int
 	alive   int
 	geo     int
 	limited int
@@ -428,6 +429,9 @@ func (p *progressTracker) record(report accountReport) {
 	defer p.mu.Unlock()
 
 	p.done++
+	if report.Alive {
+		p.live++
+	}
 
 	switch statusBucket(report.StatusCode) {
 	case "alive":
@@ -452,12 +456,12 @@ func (p *progressTracker) record(report accountReport) {
 	pending := p.total - p.done
 
 	fmt.Printf(
-		"%s【%s】%s %s  %s%s%s  %s%s%s  当前存活%d  待检查%d\n",
+		"%s【%s】%s %s  %s%s%s  %s%s%s  当前可登录%d  待检查%d\n",
 		ansiGray, formatLineTime(time.Now()), ansiReset,
 		phone,
 		routeColor, routeText, ansiReset,
 		statusColor, statusText, ansiReset,
-		p.alive,
+		p.live,
 		pending,
 	)
 	if p.done == p.total {
@@ -480,10 +484,10 @@ func (p *progressTracker) printHeartbeat(initial bool) {
 	pending := p.total - p.done
 
 	fmt.Printf(
-		"%s【%s】%s %s%s%s  当前存活%d  待检查%d\n",
+		"%s【%s】%s %s%s%s  当前可登录%d  待检查%d\n",
 		ansiGray, formatLineTime(time.Now()), ansiReset,
 		ansiYellow, label, ansiReset,
-		p.alive,
+		p.live,
 		pending,
 	)
 }
