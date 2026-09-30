@@ -97,9 +97,9 @@ function Prompt-InputPath() {
 
         switch ($choice) {
             "1" {
-                $selectedPath = Select-FolderPath (zh "6K+36YCJ5oupIHNlc3Npb24g5paH5Lu25aS5")
+                $selectedPath = Select-FilePath (zh "6K+36YCJ5oup6L+Z5Liq5paH5Lu25aS56YeM55qE5Lu75oSP5LiA5LiqIC5zZXNzaW9uIOaWh+S7tg==") "Session files (*.session)|*.session|All files (*.*)|*.*"
                 if ($selectedPath) {
-                    return $selectedPath
+                    return Split-Path -Parent $selectedPath
                 }
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }

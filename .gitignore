@@ -1,3 +1,4 @@
 output/
 *.zip
 *.exe
+!tg-session-checker-go.exe
