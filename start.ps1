@@ -12,7 +12,6 @@ function Select-FolderPath([string]$description) {
     $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
     $dialog.Description = $description
     $dialog.ShowNewFolderButton = $false
-    $dialog.UseDescriptionForTitle = $true
 
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         return $dialog.SelectedPath
@@ -147,28 +146,35 @@ function Prompt-OutputDir([string]$defaultOutput) {
     return $defaultOutput
 }
 
-$inputPath = Prompt-InputPath
-$defaultOutput = Join-Path $scriptDir "output"
-$outputDir = Prompt-OutputDir $defaultOutput
+try {
+    $inputPath = Prompt-InputPath
+    $defaultOutput = Join-Path $scriptDir "output"
+    $outputDir = Prompt-OutputDir $defaultOutput
 
-if (-not (Test-Path -LiteralPath $outputDir)) {
-    New-Item -ItemType Directory -Path $outputDir | Out-Null
+    if (-not (Test-Path -LiteralPath $outputDir)) {
+        New-Item -ItemType Directory -Path $outputDir | Out-Null
+    }
+
+    Write-Host ""
+    Write-Host (zh "5byA5aeL5omn6KGM77ya") -ForegroundColor Cyan
+    Write-Host ("  " + (zh "5qih5byP") + ": $modeLabel ($mode)") -ForegroundColor White
+    Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
+    Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
+    Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
+    Write-Host ""
+
+    $exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
+    if (Test-Path -LiteralPath $exePath) {
+        & $exePath -input $inputPath -mode $mode -out $outputDir
+    } else {
+        go run . -input $inputPath -mode $mode -out $outputDir
+    }
+
+    Write-Host ""
+    Read-Host (zh "5oyJ5Zue6L2m6YCA5Ye6") | Out-Null
+} catch {
+    Write-Host ""
+    Write-Host ("ERROR: " + $_.Exception.Message) -ForegroundColor Red
+    Read-Host (zh "5oyJ5Zue6L2m6YCA5Ye6") | Out-Null
+    exit 1
 }
-
-Write-Host ""
-Write-Host (zh "5byA5aeL5omn6KGM77ya") -ForegroundColor Cyan
-Write-Host ("  " + (zh "5qih5byP") + ": $modeLabel ($mode)") -ForegroundColor White
-Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
-Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
-Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
-Write-Host ""
-
-$exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
-if (Test-Path -LiteralPath $exePath) {
-    & $exePath -input $inputPath -mode $mode -out $outputDir
-} else {
-    go run . -input $inputPath -mode $mode -out $outputDir
-}
-
-Write-Host ""
-Read-Host (zh "5oyJ5Zue6L2m6YCA5Ye6") | Out-Null
