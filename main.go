@@ -1263,12 +1263,8 @@ func (m freezeMetadata) HasState() bool {
 
 func (m freezeMetadata) StatusSummary() string {
 	switch {
-	case m.FreezeSinceText != "" && m.FreezeUntilText != "":
-		return "冻结自 " + m.FreezeSinceText + "，删号至 " + m.FreezeUntilText
 	case m.FreezeSinceText != "":
 		return "冻结自 " + m.FreezeSinceText
-	case m.FreezeUntilText != "":
-		return "冻结，删号至 " + m.FreezeUntilText
 	default:
 		return "冻结"
 	}
