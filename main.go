@@ -139,7 +139,7 @@ func parseConfig() (config, error) {
 	flag.StringVar(&cfg.input, "input", "", "输入目录、.session 文件或 .zip 包")
 	flag.StringVar(&cfg.outputDir, "out", "output", "输出目录")
 	flag.StringVar(&cfg.mode, "mode", "alive", "检查模式: alive | spam | both")
-	flag.IntVar(&cfg.workers, "workers", 5, "并发检查数")
+	flag.IntVar(&cfg.workers, "workers", 100, "并发检查数")
 	flag.DurationVar(&cfg.timeout, "timeout", 45*time.Second, "单账号检查超时")
 	flag.Parse()
 
@@ -156,7 +156,7 @@ func parseConfig() (config, error) {
 		return cfg, errors.New("缺少 TG_APP_HASH")
 	}
 	if cfg.workers <= 0 {
-		cfg.workers = 5
+		cfg.workers = 100
 	}
 	cfg.mode = strings.ToLower(strings.TrimSpace(cfg.mode))
 	switch cfg.mode {

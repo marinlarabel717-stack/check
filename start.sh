@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export TG_APP_ID="${TG_APP_ID:-2040}"
 export TG_APP_HASH="${TG_APP_HASH:-b18441a1ff607e10a989891a5462e627}"
+WORKERS="${WORKERS:-100}"
 
 print_banner() {
   cat <<'EOF'
@@ -71,10 +72,11 @@ run_cli() {
   echo "  模式: $MODE_LABEL ($MODE)"
   echo "  输入: $INPUT_PATH"
   echo "  输出: $OUTPUT_DIR"
+  echo "  Workers: $WORKERS"
   echo "  AppID: $TG_APP_ID"
   echo
 
-  exec go run . -input "$INPUT_PATH" -mode "$MODE" -out "$OUTPUT_DIR"
+  exec go run . -input "$INPUT_PATH" -mode "$MODE" -workers "$WORKERS" -out "$OUTPUT_DIR"
 }
 
 if [[ $# -gt 0 ]]; then

@@ -43,6 +43,7 @@ if (-not $env:TG_APP_ID) {
 if (-not $env:TG_APP_HASH) {
     $env:TG_APP_HASH = "b18441a1ff607e10a989891a5462e627"
 }
+$workers = 100
 
 Write-Host "============================================================" -ForegroundColor DarkGray
 Write-Host " tg-session-checker-go" -ForegroundColor Cyan
@@ -160,14 +161,15 @@ try {
     Write-Host ("  " + (zh "5qih5byP") + ": $modeLabel ($mode)") -ForegroundColor White
     Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
     Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
+    Write-Host ("  Workers: " + $workers) -ForegroundColor White
     Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
     Write-Host ""
 
     $exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
     if (Test-Path -LiteralPath $exePath) {
-        & $exePath -input $inputPath -mode $mode -out $outputDir
+        & $exePath -input $inputPath -mode $mode -workers $workers -out $outputDir
     } else {
-        go run . -input $inputPath -mode $mode -out $outputDir
+        go run . -input $inputPath -mode $mode -workers $workers -out $outputDir
     }
 
     Write-Host ""
