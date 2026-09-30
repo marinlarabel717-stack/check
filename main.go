@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,7 +27,9 @@ import (
 	gsession "github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/telegram/dcs"
 	mtproto "github.com/gotd/td/tg"
+	"golang.org/x/net/proxy"
 	_ "modernc.org/sqlite"
 )
 
@@ -38,6 +41,8 @@ type config struct {
 	mode      string
 	workers   int
 	timeout   time.Duration
+	proxyFile string
+	proxyPool *proxyPool
 }
 
 type sessionCandidate struct {
@@ -75,6 +80,19 @@ type importedSessionFile struct {
 }
 
 type importOnlyAuth struct{}
+
+type proxyPool struct {
+	mu      sync.Mutex
+	proxies []*proxyEntry
+	next    int
+}
+
+type proxyEntry struct {
+	raw           string
+	dialer        proxy.ContextDialer
+	timeoutStreak int
+	disabled      bool
+}
 
 type progressTracker struct {
 	mu      sync.Mutex
@@ -139,6 +157,7 @@ func parseConfig() (config, error) {
 	flag.StringVar(&cfg.mode, "mode", "alive", "检查模式: alive | spam | both")
 	flag.IntVar(&cfg.workers, "workers", 100, "并发检查数")
 	flag.DurationVar(&cfg.timeout, "timeout", 45*time.Second, "单账号检查超时")
+	flag.StringVar(&cfg.proxyFile, "proxy-file", "proxy.txt", "代理列表文件，一行一个 socks5 代理")
 	flag.Parse()
 
 	cfg.appID = readEnvInt("TG_APP_ID")
@@ -162,7 +181,159 @@ func parseConfig() (config, error) {
 	default:
 		return cfg, errors.New("-mode 仅支持 alive / spam / both")
 	}
+
+	pool, err := loadProxyPool(cfg.proxyFile)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.proxyPool = pool
 	return cfg, nil
+}
+
+func loadProxyPool(path string) (*proxyPool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取代理文件失败: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("代理文件路径是目录: %s", path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("读取代理文件失败: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	entries := make([]*proxyEntry, 0, len(lines))
+	for idx, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		dialer, normalized, err := parseProxyDialer(line)
+		if err != nil {
+			return nil, fmt.Errorf("proxy.txt 第 %d 行无效: %w", idx+1, err)
+		}
+		entries = append(entries, &proxyEntry{
+			raw:    normalized,
+			dialer: dialer,
+		})
+	}
+
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	return &proxyPool{proxies: entries}, nil
+}
+
+func parseProxyDialer(raw string) (proxy.ContextDialer, string, error) {
+	normalized := strings.TrimSpace(raw)
+	if !strings.Contains(normalized, "://") {
+		normalized = "socks5://" + normalized
+	}
+
+	u, err := url.Parse(normalized)
+	if err != nil {
+		return nil, "", err
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "socks5", "socks5h":
+	default:
+		return nil, "", fmt.Errorf("仅支持 socks5 代理链接: %s", raw)
+	}
+
+	if strings.TrimSpace(u.Host) == "" {
+		return nil, "", fmt.Errorf("代理地址为空: %s", raw)
+	}
+
+	var auth *proxy.Auth
+	if u.User != nil {
+		password, _ := u.User.Password()
+		auth = &proxy.Auth{
+			User:     u.User.Username(),
+			Password: password,
+		}
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
+	if err != nil {
+		return nil, "", err
+	}
+	contextDialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return nil, "", fmt.Errorf("代理不支持上下文拨号: %s", raw)
+	}
+	return contextDialer, normalized, nil
+}
+
+func (p *proxyPool) nextDialer() (func(context.Context, string, string) (net.Conn, error), *proxyEntry) {
+	if p == nil {
+		return nil, nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.proxies) == 0 {
+		return nil, nil
+	}
+
+	for i := 0; i < len(p.proxies); i++ {
+		idx := (p.next + i) % len(p.proxies)
+		entry := p.proxies[idx]
+		if entry.disabled {
+			continue
+		}
+		p.next = (idx + 1) % len(p.proxies)
+		return entry.dialer.DialContext, entry
+	}
+
+	return nil, nil
+}
+
+func (p *proxyPool) reportResult(entry *proxyEntry, err error) bool {
+	if p == nil || entry == nil {
+		return false
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if err == nil || !isTimeoutLike(err) {
+		entry.timeoutStreak = 0
+		return false
+	}
+
+	entry.timeoutStreak++
+	if entry.timeoutStreak >= 2 {
+		entry.disabled = true
+		return true
+	}
+	return false
+}
+
+func isTimeoutLike(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "timeout") || strings.Contains(text, "deadline exceeded")
 }
 
 func runChecks(cfg config, candidates []sessionCandidate) []accountReport {
@@ -451,7 +622,7 @@ func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandid
 		return report
 	}
 
-	self, rawReply, code, summary, alive, canSend, err := runSessionCheck(ctx, cfg.mode, cfg.appID, cfg.appHash, gotdSession)
+	self, rawReply, code, summary, alive, canSend, err := runSessionCheck(ctx, cfg.mode, cfg.appID, cfg.appHash, cfg.proxyPool, gotdSession)
 	if self != nil {
 		report.Phone = self.Phone
 		report.UserID = self.ID
@@ -769,15 +940,31 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 	}
 }
 
-func runSessionCheck(ctx context.Context, mode string, appID int, appHash, sessionFile string) (*probeSelf, string, string, string, bool, bool, error) {
+func runSessionCheck(ctx context.Context, mode string, appID int, appHash string, pool *proxyPool, sessionFile string) (*probeSelf, string, string, string, bool, bool, error) {
+	dialContext, proxyEntry := pool.nextDialer()
+	self, rawText, code, summary, alive, canSend, err := runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, dialContext)
+	if pool != nil && proxyEntry != nil {
+		fallbackToDirect := pool.reportResult(proxyEntry, err)
+		if fallbackToDirect {
+			return runSessionCheckOnce(ctx, mode, appID, appHash, sessionFile, nil)
+		}
+	}
+	return self, rawText, code, summary, alive, canSend, err
+}
+
+func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, sessionFile string, dialContext func(context.Context, string, string) (net.Conn, error)) (*probeSelf, string, string, string, bool, bool, error) {
 	if err := os.MkdirAll(filepath.Dir(sessionFile), 0o755); err != nil {
 		return nil, "", "failed", "创建 session 目录失败", false, false, err
 	}
 
 	sessionStorage := &telegram.FileSessionStorage{Path: sessionFile}
-	client := telegram.NewClient(appID, appHash, telegram.Options{
+	options := telegram.Options{
 		SessionStorage: sessionStorage,
-	})
+	}
+	if dialContext != nil {
+		options.Resolver = dcs.Plain(dcs.PlainOptions{Dial: dialContext})
+	}
+	client := telegram.NewClient(appID, appHash, options)
 	flow := auth.NewFlow(importOnlyAuth{}, auth.SendCodeOptions{})
 
 	var (

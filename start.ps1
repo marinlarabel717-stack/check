@@ -44,6 +44,15 @@ if (-not $env:TG_APP_HASH) {
     $env:TG_APP_HASH = "b18441a1ff607e10a989891a5462e627"
 }
 $workers = 100
+$proxyFile = Join-Path $scriptDir "proxy.txt"
+
+if (-not (Test-Path -LiteralPath $proxyFile)) {
+    @(
+        "# one proxy per line",
+        "# socks5://user:pass@127.0.0.1:1080",
+        "# 127.0.0.1:1080"
+    ) | Set-Content -LiteralPath $proxyFile -Encoding UTF8
+}
 
 function Prompt-Mode() {
     Write-Host "============================================================" -ForegroundColor DarkGray
@@ -166,14 +175,15 @@ while ($true) {
         Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
         Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
         Write-Host ("  Workers: " + $workers) -ForegroundColor White
+        Write-Host ("  Proxy: " + $proxyFile) -ForegroundColor White
         Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
         Write-Host ""
 
         $exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
         if (Test-Path -LiteralPath $exePath) {
-            & $exePath -input $inputPath -mode $mode -workers $workers -out $outputDir
+            & $exePath -input $inputPath -mode $mode -workers $workers -proxy-file $proxyFile -out $outputDir
         } else {
-            go run . -input $inputPath -mode $mode -workers $workers -out $outputDir
+            go run . -input $inputPath -mode $mode -workers $workers -proxy-file $proxyFile -out $outputDir
         }
     } catch {
         Write-Host ""

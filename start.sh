@@ -6,6 +6,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export TG_APP_ID="${TG_APP_ID:-2040}"
 export TG_APP_HASH="${TG_APP_HASH:-b18441a1ff607e10a989891a5462e627}"
 WORKERS="${WORKERS:-100}"
+PROXY_FILE="${PROXY_FILE:-$SCRIPT_DIR/proxy.txt}"
+
+if [[ ! -f "$PROXY_FILE" ]]; then
+  cat >"$PROXY_FILE" <<'EOF'
+# one proxy per line
+# socks5://user:pass@127.0.0.1:1080
+# 127.0.0.1:1080
+EOF
+fi
 
 print_banner() {
   cat <<'EOF'
@@ -75,10 +84,11 @@ run_cli() {
   echo "  输入: $INPUT_PATH"
   echo "  输出: $RUN_OUTPUT_DIR"
   echo "  Workers: $WORKERS"
+  echo "  Proxy: $PROXY_FILE"
   echo "  AppID: $TG_APP_ID"
   echo
 
-  exec go run . -input "$INPUT_PATH" -mode "$MODE" -workers "$WORKERS" -out "$RUN_OUTPUT_DIR"
+  exec go run . -input "$INPUT_PATH" -mode "$MODE" -workers "$WORKERS" -proxy-file "$PROXY_FILE" -out "$RUN_OUTPUT_DIR"
 }
 
 if [[ $# -gt 0 ]]; then
