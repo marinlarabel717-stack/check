@@ -484,12 +484,12 @@ func checkSingleSession(ctx context.Context, cfg config, candidate sessionCandid
 }
 
 func writeOutputs(outputDir string, reports []accountReport) error {
-	reportPath := filepath.Join(outputDir, "report.csv")
+	reportPath := filepath.Join(outputDir, "检查结果.csv")
 	if err := writeCSV(reportPath, reports); err != nil {
 		return err
 	}
 
-	jsonPath := filepath.Join(outputDir, "report.json")
+	jsonPath := filepath.Join(outputDir, "检查结果.json")
 	jsonData, err := json.MarshalIndent(reports, "", "  ")
 	if err != nil {
 		return err
@@ -498,16 +498,50 @@ func writeOutputs(outputDir string, reports []accountReport) error {
 		return err
 	}
 
-	activePath := filepath.Join(outputDir, "normal_sessions.zip")
-	if err := writeZipByFilter(activePath, reports, func(r accountReport) bool { return isPassed(r) }); err != nil {
-		return err
+	zipTargets := []struct {
+		name string
+		keep func(accountReport) bool
+	}{
+		{name: "存活账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "alive" }},
+		{name: "受限账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "limited" }},
+		{name: "封禁账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "banned" }},
+		{name: "冻结账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "frozen" }},
+		{name: "失效账号.zip", keep: func(r accountReport) bool {
+			return statusBucket(r.StatusCode) == "failed" && failureDisplay(r) == "失效"
+		}},
+		{name: "超时账号.zip", keep: func(r accountReport) bool {
+			return statusBucket(r.StatusCode) == "failed" && failureDisplay(r) == "超时"
+		}},
+		{name: "连接失败账号.zip", keep: func(r accountReport) bool {
+			return statusBucket(r.StatusCode) == "failed" && failureDisplay(r) == "连接失败"
+		}},
+		{name: "限流账号.zip", keep: func(r accountReport) bool {
+			return statusBucket(r.StatusCode) == "failed" && failureDisplay(r) == "限流"
+		}},
+		{name: "失败账号.zip", keep: func(r accountReport) bool {
+			return statusBucket(r.StatusCode) == "failed" && failureDisplay(r) == "失败"
+		}},
+		{name: "未知状态.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "unknown" }},
 	}
 
-	abnormalPath := filepath.Join(outputDir, "abnormal_sessions.zip")
-	if err := writeZipByFilter(abnormalPath, reports, func(r accountReport) bool { return !isPassed(r) }); err != nil {
-		return err
+	for _, target := range zipTargets {
+		if !hasMatchingReport(reports, target.keep) {
+			continue
+		}
+		if err := writeZipByFilter(filepath.Join(outputDir, target.name), reports, target.keep); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func hasMatchingReport(reports []accountReport, keep func(accountReport) bool) bool {
+	for _, report := range reports {
+		if keep(report) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeCSV(path string, reports []accountReport) error {
