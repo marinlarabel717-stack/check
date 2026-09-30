@@ -1226,16 +1226,7 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 			return fmt.Errorf("无法向 @SpamBot 发起检测: %w", err)
 		}
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(2 * time.Second):
-		}
-
-		history, err := api.MessagesGetHistory(ctx, &mtproto.MessagesGetHistoryRequest{
-			Peer:  peer,
-			Limit: 5,
-		})
+		rawText, err = waitForSpamBotReply(ctx, api, peer)
 		if err != nil {
 			if isFrozenRPCError(err) {
 				freezeInfo, _ = fetchFreezeMetadata(ctx, api)
@@ -1246,8 +1237,6 @@ func runSessionCheckOnce(ctx context.Context, mode string, appID int, appHash, s
 			}
 			return fmt.Errorf("读取 @SpamBot 回复失败: %w", err)
 		}
-
-		rawText = latestIncomingText(history)
 		if strings.TrimSpace(rawText) == "" {
 			code, summary, canSend = "unknown", "未拿到 @SpamBot 的有效回复，请稍后再试", false
 			return nil
@@ -1412,6 +1401,28 @@ func latestIncomingText(history mtproto.MessagesMessagesClass) string {
 		}
 	}
 	return ""
+}
+
+func waitForSpamBotReply(ctx context.Context, api *mtproto.Client, peer mtproto.InputPeerClass) (string, error) {
+	for attempt := 0; attempt < 5; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+
+		history, err := api.MessagesGetHistory(ctx, &mtproto.MessagesGetHistoryRequest{
+			Peer:  peer,
+			Limit: 8,
+		})
+		if err != nil {
+			return "", err
+		}
+		if text := strings.TrimSpace(latestIncomingText(history)); text != "" {
+			return text, nil
+		}
+	}
+	return "", nil
 }
 
 func interpretSpamBotStatus(raw string) (string, string, bool) {
