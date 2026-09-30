@@ -457,7 +457,7 @@ func (p *progressTracker) record(report accountReport) {
 	pending := p.total - p.done
 
 	fmt.Printf(
-		"%s【%s】%s %s  %s%s%s  %s%s%s  当前可登录%d  待检查%d\n",
+		"%s【%s】%s %s  %s%s%s  %s%s%s  当前可用%d  待检查%d\n",
 		ansiGray, formatLineTime(time.Now()), ansiReset,
 		phone,
 		routeColor, routeText, ansiReset,
@@ -485,7 +485,7 @@ func (p *progressTracker) printHeartbeat(initial bool) {
 	pending := p.total - p.done
 
 	fmt.Printf(
-		"%s【%s】%s %s%s%s  当前可登录%d  待检查%d\n",
+		"%s【%s】%s %s%s%s  当前可用%d  待检查%d\n",
 		ansiGray, formatLineTime(time.Now()), ansiReset,
 		ansiYellow, label, ansiReset,
 		p.live,
@@ -494,7 +494,7 @@ func (p *progressTracker) printHeartbeat(initial bool) {
 }
 
 func formatLineTime(t time.Time) string {
-	return t.Format("2006-1-2 -15:04")
+	return t.Format("1-2 15:04")
 }
 
 func displayPhone(report accountReport) string {
