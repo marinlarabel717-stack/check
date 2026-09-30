@@ -28,14 +28,14 @@ namespace CheckDialogs
 
     [ComImport]
     [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
-    private class FileOpenDialogRCW
+    class FileOpenDialogRCW
     {
     }
 
     [ComImport]
     [Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileDialog
+    interface IFileDialog
     {
         [PreserveSig] int Show(IntPtr parent);
         void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
@@ -66,7 +66,7 @@ namespace CheckDialogs
     [ComImport]
     [Guid("d57c7288-d4ad-4768-be02-9d969532d960")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileOpenDialog : IFileDialog
+    interface IFileOpenDialog : IFileDialog
     {
         [PreserveSig] new int Show(IntPtr parent);
         new void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
@@ -99,7 +99,7 @@ namespace CheckDialogs
     [ComImport]
     [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellItem
+    interface IShellItem
     {
         void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
         void GetParent(out IShellItem ppsi);
@@ -111,7 +111,7 @@ namespace CheckDialogs
     [ComImport]
     [Guid("b63ea76d-1f85-456f-a19c-48159efa858b")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellItemArray
+    interface IShellItemArray
     {
         void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppvOut);
         void GetPropertyStore(int flags, ref Guid riid, out IntPtr ppv);
@@ -407,6 +407,10 @@ function New-RunOutputDir([string]$outputRoot, [string]$runName) {
     $runOutputDir = Join-Path $outputRoot ($safeRunName + "_" + $runFolder)
     New-Item -ItemType Directory -Path $runOutputDir -Force | Out-Null
     return $runOutputDir
+}
+
+if ($env:TG_CHECKER_SCRIPT_ONLY -eq "1") {
+    return
 }
 
 while ($true) {
