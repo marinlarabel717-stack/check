@@ -159,7 +159,7 @@ func main() {
 		defer cleanup()
 	}
 	if len(candidates) == 0 {
-		log.Fatalf("没有找到可检查的 .session 或 tdata（tdata 目录内需包含 key_data）")
+		log.Fatalf("没有找到可检查的 .session 或 tdata（tdata 目录内需包含 key_data 或 key_datas）")
 	}
 
 	log.Printf("开始检查，共 %d 个 session，workers=%d", len(candidates), cfg.workers)
@@ -1115,7 +1115,7 @@ func collectCandidates(input string) ([]sessionCandidate, func(), error) {
 		})
 		sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
 		if len(files) == 0 {
-			return nil, nil, fmt.Errorf("目录中未找到可检查的 .session 或 tdata（tdata 目录内需包含 key_data）")
+			return nil, nil, fmt.Errorf("目录中未找到可检查的 .session 或 tdata（tdata 目录内需包含 key_data 或 key_datas）")
 		}
 		return files, nil, err
 	}
@@ -1160,9 +1160,14 @@ func isTDataDir(path string) bool {
 	if err != nil || !info.IsDir() {
 		return false
 	}
-	keyDataPath := filepath.Join(path, "key_data")
-	keyInfo, err := os.Stat(keyDataPath)
-	return err == nil && !keyInfo.IsDir()
+	for _, name := range []string{"key_data", "key_datas"} {
+		keyDataPath := filepath.Join(path, name)
+		keyInfo, err := os.Stat(keyDataPath)
+		if err == nil && !keyInfo.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 func runSessionCheck(ctx context.Context, mode string, appID int, appHash string, pool *proxyPool, sessionFile string) (*probeSelf, string, string, string, bool, bool, string, error) {
