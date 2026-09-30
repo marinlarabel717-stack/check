@@ -480,7 +480,7 @@ while ($true) {
             if ($referenceTimes.Count -gt 0) {
                 $latestReferenceTime = ($referenceTimes | Sort-Object -Descending | Select-Object -First 1)
                 if ($exeInfo.LastWriteTimeUtc -lt $latestReferenceTime) {
-                    Write-Host (zh "6K2m5ZGK77ya5b2T5YmNIGV4ZSDml7bpl7Tml6nkuo7lkK/lipjlhozmuYvnm67noIHvvIzlj6/og73mmK/oj5zljZXmmK/mlrDnmoTvvIzkvYbmoLjlv4Pkuozov5vliLbov5jmmK/oldueeOeJiOOAgg==") -ForegroundColor Yellow
+                    Write-Host "警告：当前 exe 时间早于脚本/源码，可能菜单已更新，但核心二进制还是旧版。" -ForegroundColor Yellow
                     Write-Host ("  EXE: " + $exeInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")) -ForegroundColor DarkYellow
                     Write-Host ("  REF: " + $latestReferenceTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")) -ForegroundColor DarkYellow
                     Write-Host ""
