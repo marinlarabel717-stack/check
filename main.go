@@ -308,6 +308,10 @@ func displayPhone(report accountReport) string {
 		return "@" + username
 	}
 	if name := strings.TrimSpace(report.FileName); name != "" {
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		if base != "" {
+			return base
+		}
 		return name
 	}
 	return "unknown"
