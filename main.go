@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -523,7 +524,7 @@ func statusBucket(code string) string {
 	switch code {
 	case "alive", "active":
 		return "alive"
-	case "restricted", "spam":
+	case "restricted", "spam", "mutual":
 		return "limited"
 	case "banned":
 		return "banned"
@@ -537,19 +538,40 @@ func statusBucket(code string) string {
 }
 
 func statusDisplay(report accountReport) (string, string) {
-	switch statusBucket(report.StatusCode) {
+	switch report.StatusCode {
 	case "alive":
 		return "存活", ansiGreen
-	case "limited":
-		return "受限", ansiYellow
+	case "active":
+		return "无限制", ansiGreen
+	case "restricted", "spam", "mutual":
+		if strings.HasPrefix(report.Summary, "双向至 ") {
+			return report.Summary, ansiYellow
+		}
+		return "双向", ansiYellow
 	case "banned":
 		return "封禁", ansiRed
 	case "frozen":
+		if strings.HasPrefix(report.Summary, "冻结至 ") {
+			return report.Summary, ansiBlue
+		}
 		return "冻结", ansiBlue
+	case "timeout":
+		return "超时", ansiYellow
 	case "failed":
 		return failureDisplay(report), ansiRed
 	default:
-		return "未知", ansiCyan
+		switch statusBucket(report.StatusCode) {
+		case "alive":
+			return "存活", ansiGreen
+		case "limited":
+			return "双向", ansiYellow
+		case "banned":
+			return "封禁", ansiRed
+		case "frozen":
+			return "冻结", ansiBlue
+		default:
+			return "未知", ansiCyan
+		}
 	}
 }
 
@@ -697,7 +719,7 @@ func writeOutputs(outputDir string, reports []accountReport) error {
 		keep func(accountReport) bool
 	}{
 		{name: "存活账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "alive" }},
-		{name: "受限账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "limited" }},
+		{name: "双向账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "limited" }},
 		{name: "封禁账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "banned" }},
 		{name: "冻结账号.zip", keep: func(r accountReport) bool { return statusBucket(r.StatusCode) == "frozen" }},
 		{name: "失效账号.zip", keep: func(r accountReport) bool {
@@ -909,7 +931,7 @@ func printFinalSummary(reports []accountReport, outputDir string) {
 	fmt.Printf("%s检查完成汇总%s\n", ansiGray, ansiReset)
 	printSummaryLine("总计", counts["total"], ansiGray)
 	printSummaryLine("存活", counts["alive"], ansiGreen)
-	printSummaryLine("受限", counts["limited"], ansiYellow)
+	printSummaryLine("双向", counts["limited"], ansiYellow)
 	printSummaryLine("封禁", counts["banned"], ansiRed)
 	printSummaryLine("冻结", counts["frozen"], ansiBlue)
 	printSummaryLine("失效", counts["invalid"], ansiRed)
@@ -1261,25 +1283,66 @@ func latestIncomingText(history mtproto.MessagesMessagesClass) string {
 
 func interpretSpamBotStatus(raw string) (string, string, bool) {
 	text := normalizeSpamBotText(raw)
+	untilText := extractSpamBotUntil(raw)
+	onText := extractSpamBotOn(raw)
 
 	switch {
 	case containsAny(text, "some phone numbers may trigger a harsh response", "phone numbers may trigger"):
-		return "active", "账号目前可以正常私信，但这个号段更容易触发风控，建议控制发送节奏", true
+		return "active", "无限制", true
 	case containsAny(text, "good news, no limits are currently applied", "you're free as a bird", "no limits", "free as a bird", "no restrictions", "all good", "account is free", "not limited"):
-		return "active", "账号状态正常，目前没有私信限制", true
+		return "active", "无限制", true
 	case containsAny(text, "mutual contacts", "only people in your contacts", "only send messages to mutual contacts", "双向", "互相添加"):
-		return "restricted", "账号目前只能给双向联系人发消息，不能正常私信陌生人", false
+		return "mutual", "双向", false
 	case containsAny(text, "account is now limited until", "limited until", "moderators have confirmed the report", "users found your messages annoying", "will be automatically released", "temporarily limited"):
-		return "restricted", "账号被临时限制，暂时不能正常私信", false
+		if untilText != "" {
+			return "restricted", "双向至 " + untilText, false
+		}
+		return "restricted", "双向", false
 	case containsAny(text, "actions can trigger a harsh response from our anti-spam systems", "account was limited", "you will not be able to send messages"):
-		return "spam", "账号触发了垃圾消息风控，当前不适合继续私信", false
+		if untilText != "" {
+			return "restricted", "双向至 " + untilText, false
+		}
+		return "restricted", "双向", false
 	case containsAny(text, "permanently banned", "account has been frozen permanently", "permanently restricted", "banned permanently", "blocked for violations", "terms of service", "banned", "suspended"):
-		return "banned", "账号已被永久限制或封禁，不能再用于私信", false
+		return "banned", "封禁", false
 	case containsAny(text, "wait", "pending", "verification"):
-		return "frozen", "账号处于等待验证或审核状态，暂时不能稳定私信", false
+		switch {
+		case untilText != "":
+			return "frozen", "冻结至 " + untilText, false
+		case onText != "":
+			return "frozen", "冻结至 " + onText, false
+		default:
+			return "frozen", "冻结", false
+		}
 	default:
 		return "unknown", "未能明确识别账号状态，请人工查看 @SpamBot 最新回复", false
 	}
+}
+
+func extractSpamBotUntil(raw string) string {
+	re := regexp.MustCompile(`(?is)\buntil\b[:\s]*([^\r\n\.]+)`)
+	match := re.FindStringSubmatch(raw)
+	if len(match) < 2 {
+		return ""
+	}
+	return cleanSpamBotDate(match[1])
+}
+
+func extractSpamBotOn(raw string) string {
+	re := regexp.MustCompile(`(?is)\b(?:released|lifted|ends?)\s+on\b[:\s]*([^\r\n\.]+)`)
+	match := re.FindStringSubmatch(raw)
+	if len(match) < 2 {
+		return ""
+	}
+	return cleanSpamBotDate(match[1])
+}
+
+func cleanSpamBotDate(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, " .!,:;")
+	value = strings.ReplaceAll(value, "UTC", " UTC")
+	value = strings.Join(strings.Fields(value), " ")
+	return value
 }
 
 func normalizeSpamBotText(text string) string {
