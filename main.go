@@ -910,6 +910,7 @@ func collectInputCandidates(cfg config) ([]sessionCandidate, func(), error) {
 		}
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
+			line = strings.TrimPrefix(line, "\uFEFF")
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}

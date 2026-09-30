@@ -4,19 +4,197 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+if (-not ("CheckDialogs.FolderPicker" -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+namespace CheckDialogs
+{
+    [Flags]
+    public enum FOS : uint
+    {
+        PICKFOLDERS = 0x00000020,
+        FORCEFILESYSTEM = 0x00000040,
+        ALLOWMULTISELECT = 0x00000200,
+        PATHMUSTEXIST = 0x00000800
+    }
+
+    public enum SIGDN : uint
+    {
+        FILESYSPATH = 0x80058000
+    }
+
+    [ComImport]
+    [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
+    private class FileOpenDialogRCW
+    {
+    }
+
+    [ComImport]
+    [Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileDialog
+    {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
+        void SetFileTypeIndex(uint iFileType);
+        void GetFileTypeIndex(out uint piFileType);
+        void Advise(IntPtr pfde, out uint pdwCookie);
+        void Unadvise(uint dwCookie);
+        void SetOptions(FOS fos);
+        void GetOptions(out FOS pfos);
+        void SetDefaultFolder(IShellItem psi);
+        void SetFolder(IShellItem psi);
+        void GetFolder(out IShellItem ppsi);
+        void GetCurrentSelection(out IShellItem ppsi);
+        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+        void GetResult(out IShellItem ppsi);
+        void AddPlace(IShellItem psi, int fdap);
+        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+        void Close(int hr);
+        void SetClientGuid(ref Guid guid);
+        void ClearClientData();
+        void SetFilter(IntPtr pFilter);
+    }
+
+    [ComImport]
+    [Guid("d57c7288-d4ad-4768-be02-9d969532d960")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileOpenDialog : IFileDialog
+    {
+        [PreserveSig] new int Show(IntPtr parent);
+        new void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
+        new void SetFileTypeIndex(uint iFileType);
+        new void GetFileTypeIndex(out uint piFileType);
+        new void Advise(IntPtr pfde, out uint pdwCookie);
+        new void Unadvise(uint dwCookie);
+        new void SetOptions(FOS fos);
+        new void GetOptions(out FOS pfos);
+        new void SetDefaultFolder(IShellItem psi);
+        new void SetFolder(IShellItem psi);
+        new void GetFolder(out IShellItem ppsi);
+        new void GetCurrentSelection(out IShellItem ppsi);
+        new void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        new void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+        new void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+        new void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+        new void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+        new void GetResult(out IShellItem ppsi);
+        new void AddPlace(IShellItem psi, int fdap);
+        new void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+        new void Close(int hr);
+        new void SetClientGuid(ref Guid guid);
+        new void ClearClientData();
+        new void SetFilter(IntPtr pFilter);
+        void GetResults(out IShellItemArray ppenum);
+        void GetSelectedItems(out IShellItemArray ppsai);
+    }
+
+    [ComImport]
+    [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItem
+    {
+        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+        void GetParent(out IShellItem ppsi);
+        void GetDisplayName(SIGDN sigdnName, out IntPtr ppszName);
+        void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
+        void Compare(IShellItem psi, uint hint, out int piOrder);
+    }
+
+    [ComImport]
+    [Guid("b63ea76d-1f85-456f-a19c-48159efa858b")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItemArray
+    {
+        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppvOut);
+        void GetPropertyStore(int flags, ref Guid riid, out IntPtr ppv);
+        void GetPropertyDescriptionList(ref IntPtr keyType, ref Guid riid, out IntPtr ppv);
+        void GetAttributes(uint attribFlags, uint sfgaoMask, out uint psfgaoAttribs);
+        void GetCount(out uint pdwNumItems);
+        void GetItemAt(uint dwIndex, out IShellItem ppsi);
+        void EnumItems(out IntPtr ppenumShellItems);
+    }
+
+    public static class FolderPicker
+    {
+        public static string[] PickFolders(string title, bool multiSelect)
+        {
+            IFileOpenDialog dialog = (IFileOpenDialog)new FileOpenDialogRCW();
+            FOS options;
+            dialog.GetOptions(out options);
+            options |= FOS.PICKFOLDERS | FOS.FORCEFILESYSTEM | FOS.PATHMUSTEXIST;
+            if (multiSelect)
+            {
+                options |= FOS.ALLOWMULTISELECT;
+            }
+            dialog.SetOptions(options);
+            dialog.SetTitle(title);
+
+            int hr = dialog.Show(IntPtr.Zero);
+            if (hr == unchecked((int)0x800704C7))
+            {
+                return new string[0];
+            }
+            Marshal.ThrowExceptionForHR(hr);
+
+            if (multiSelect)
+            {
+                IShellItemArray results;
+                dialog.GetResults(out results);
+                uint count;
+                results.GetCount(out count);
+                List<string> paths = new List<string>();
+                for (uint i = 0; i < count; i++)
+                {
+                    IShellItem item;
+                    results.GetItemAt(i, out item);
+                    paths.Add(GetPath(item));
+                }
+                return paths.ToArray();
+            }
+
+            IShellItem result;
+            dialog.GetResult(out result);
+            return new[] { GetPath(result) };
+        }
+
+        private static string GetPath(IShellItem item)
+        {
+            IntPtr pointer = IntPtr.Zero;
+            item.GetDisplayName(SIGDN.FILESYSPATH, out pointer);
+            try
+            {
+                return Marshal.PtrToStringUni(pointer);
+            }
+            finally
+            {
+                if (pointer != IntPtr.Zero)
+                {
+                    Marshal.FreeCoTaskMem(pointer);
+                }
+            }
+        }
+    }
+}
+'@
+}
+
 function zh([string]$b64) {
     return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
 }
 
 function Select-FolderPath([string]$description) {
-    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dialog.Description = $description
-    $dialog.ShowNewFolderButton = $false
-
-    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        return $dialog.SelectedPath
+    $paths = [CheckDialogs.FolderPicker]::PickFolders($description, $false)
+    if ($paths.Count -gt 0) {
+        return $paths[0]
     }
-
     return $null
 }
 
@@ -34,18 +212,8 @@ function Select-FilePath([string]$title, [string]$filter) {
     return $null
 }
 
-function Select-FilePaths([string]$title, [string]$filter) {
-    $dialog = New-Object System.Windows.Forms.OpenFileDialog
-    $dialog.Title = $title
-    $dialog.Filter = $filter
-    $dialog.Multiselect = $true
-    $dialog.CheckFileExists = $true
-
-    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        return @($dialog.FileNames)
-    }
-
-    return @()
+function Select-FolderPaths([string]$title) {
+    return @([CheckDialogs.FolderPicker]::PickFolders($title, $true))
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -97,7 +265,8 @@ function Prompt-Mode() {
 
 function New-InputListFile([string[]]$paths) {
     $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ("tg-session-check-inputs-" + [guid]::NewGuid().ToString("N") + ".txt"))
-    [System.IO.File]::WriteAllLines($tempFile, $paths, [System.Text.Encoding]::UTF8)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($tempFile, $paths, $utf8NoBom)
     return $tempFile
 }
 
@@ -159,11 +328,10 @@ function Prompt-InputSource() {
                 Write-Host (zh "5L2g5Y+W5raI5LqG6YCJ5oup77yM6YeN5paw5p2l44CC") -ForegroundColor Yellow
             }
             "2" {
-                $selectedPaths = Select-FilePaths (zh "6K+36YCJ5oup5aSa5Liq5paH5Lu25aS577yI5q+P5Liq5paH5Lu25aS55Lu75oSP54K55LiA5LiqIC5zZXNzaW9u77yJ") "Session files (*.session)|*.session|All files (*.*)|*.*"
-                if ($selectedPaths.Count -gt 0) {
+                $folderPaths = @(Select-FolderPaths (zh "6K+36YCJ5oup5aSa5Liq5paH5Lu25aS5"))
+                if ($folderPaths.Count -gt 0) {
                     $folderMap = @{}
-                    foreach ($selectedPath in $selectedPaths) {
-                        $folderPath = Split-Path -Parent $selectedPath
+                    foreach ($folderPath in $folderPaths) {
                         if (-not [string]::IsNullOrWhiteSpace($folderPath)) {
                             $folderMap[$folderPath] = $true
                         }
@@ -171,11 +339,17 @@ function Prompt-InputSource() {
                     $folderPaths = @($folderMap.Keys | Sort-Object)
                     if ($folderPaths.Count -gt 0) {
                         $inputListFile = New-InputListFile $folderPaths
+                        $displayText = ((zh "5aSa5Liq5paH5Lu25aS5") + " (" + $folderPaths.Count + " " + (zh "5Liq") + ")")
+                        $resultName = ((zh "5aSa5Liq5paH5Lu25aS5") + "_" + $folderPaths.Count + (zh "5Liq"))
+                        if ($folderPaths.Count -eq 1) {
+                            $displayText = $folderPaths[0]
+                            $resultName = Get-InputBaseName $folderPaths[0]
+                        }
                         return @{
                             Args = @("-input-list", $inputListFile)
-                            Display = ((zh "5aSa5Liq5paH5Lu25aS5") + " (" + $folderPaths.Count + " " + (zh "5Liq") + ")")
+                            Display = $displayText
                             TempFile = $inputListFile
-                            ResultName = ((zh "5aSa5Liq5paH5Lu25aS5") + "_" + $folderPaths.Count + (zh "5Liq"))
+                            ResultName = $resultName
                         }
                     }
                 }
