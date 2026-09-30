@@ -59,24 +59,26 @@ prompt_input() {
 }
 
 prompt_output() {
-  read -r -p "输出目录 (默认 $SCRIPT_DIR/output): " OUTPUT_DIR
+  read -r -p "输出目录根目录 (默认 $SCRIPT_DIR/output): " OUTPUT_DIR
   OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 }
 
 run_cli() {
   mkdir -p "$OUTPUT_DIR"
+  RUN_OUTPUT_DIR="$OUTPUT_DIR/$(date +%Y-%m-%d_%H-%M-%S)"
+  mkdir -p "$RUN_OUTPUT_DIR"
   cd "$SCRIPT_DIR"
 
   echo
   echo "开始执行："
   echo "  模式: $MODE_LABEL ($MODE)"
   echo "  输入: $INPUT_PATH"
-  echo "  输出: $OUTPUT_DIR"
+  echo "  输出: $RUN_OUTPUT_DIR"
   echo "  Workers: $WORKERS"
   echo "  AppID: $TG_APP_ID"
   echo
 
-  exec go run . -input "$INPUT_PATH" -mode "$MODE" -workers "$WORKERS" -out "$OUTPUT_DIR"
+  exec go run . -input "$INPUT_PATH" -mode "$MODE" -workers "$WORKERS" -out "$RUN_OUTPUT_DIR"
 }
 
 if [[ $# -gt 0 ]]; then

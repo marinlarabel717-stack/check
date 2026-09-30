@@ -129,9 +129,7 @@ func main() {
 		log.Fatalf("写出结果失败: %v", err)
 	}
 
-	counts := summarize(reports)
-	log.Printf("检查完成: 正常=%d 异常=%d 失败=%d 未知=%d", counts["active"], counts["abnormal"], counts["failed"], counts["unknown"])
-	log.Printf("结果目录: %s", cfg.outputDir)
+	printFinalSummary(reports, cfg.outputDir)
 }
 
 func parseConfig() (config, error) {
@@ -625,6 +623,69 @@ func uniqueZipName(used map[string]int, name string) string {
 	stem := strings.TrimSuffix(base, ext)
 	used[base]++
 	return fmt.Sprintf("%s_%d%s", stem, used[base], ext)
+}
+
+func printFinalSummary(reports []accountReport, outputDir string) {
+	counts := map[string]int{
+		"total":     len(reports),
+		"alive":     0,
+		"limited":   0,
+		"banned":    0,
+		"frozen":    0,
+		"invalid":   0,
+		"timeout":   0,
+		"connect":   0,
+		"rateLimit": 0,
+		"failed":    0,
+		"unknown":   0,
+	}
+
+	for _, report := range reports {
+		switch statusBucket(report.StatusCode) {
+		case "alive":
+			counts["alive"]++
+		case "limited":
+			counts["limited"]++
+		case "banned":
+			counts["banned"]++
+		case "frozen":
+			counts["frozen"]++
+		case "failed":
+			switch failureDisplay(report) {
+			case "失效":
+				counts["invalid"]++
+			case "超时":
+				counts["timeout"]++
+			case "连接失败":
+				counts["connect"]++
+			case "限流":
+				counts["rateLimit"]++
+			default:
+				counts["failed"]++
+			}
+		default:
+			counts["unknown"]++
+		}
+	}
+
+	fmt.Println()
+	fmt.Printf("%s检查完成汇总%s\n", ansiGray, ansiReset)
+	printSummaryLine("总计", counts["total"], ansiGray)
+	printSummaryLine("存活", counts["alive"], ansiGreen)
+	printSummaryLine("受限", counts["limited"], ansiYellow)
+	printSummaryLine("封禁", counts["banned"], ansiRed)
+	printSummaryLine("冻结", counts["frozen"], ansiBlue)
+	printSummaryLine("失效", counts["invalid"], ansiRed)
+	printSummaryLine("超时", counts["timeout"], ansiYellow)
+	printSummaryLine("连接失败", counts["connect"], ansiRed)
+	printSummaryLine("限流", counts["rateLimit"], ansiYellow)
+	printSummaryLine("失败", counts["failed"], ansiRed)
+	printSummaryLine("未知", counts["unknown"], ansiCyan)
+	fmt.Printf("%s结果目录%s %s\n", ansiGray, ansiReset, outputDir)
+}
+
+func printSummaryLine(label string, count int, color string) {
+	fmt.Printf("%s%-8s%s %d\n", color, label, ansiReset, count)
 }
 
 func summarize(reports []accountReport) map[string]int {

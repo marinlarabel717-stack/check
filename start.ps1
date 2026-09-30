@@ -45,38 +45,29 @@ if (-not $env:TG_APP_HASH) {
 }
 $workers = 100
 
-Write-Host "============================================================" -ForegroundColor DarkGray
-Write-Host " tg-session-checker-go" -ForegroundColor Cyan
-Write-Host (" Telegram Session " + (zh "5om56YeP562b5Y+35bel5YW3")) -ForegroundColor White
-Write-Host "============================================================" -ForegroundColor DarkGray
-Write-Host (" 1. " + (zh "5Y+q562b5a2Y5rS7")) -ForegroundColor Green
-Write-Host (" 2. " + (zh "5Y+q6LeRIFNwYW1Cb3Q=")) -ForegroundColor Yellow
-Write-Host (" 3. " + (zh "5a2Y5rS7ICsgU3BhbUJvdA==")) -ForegroundColor Magenta
-Write-Host "============================================================" -ForegroundColor DarkGray
+function Prompt-Mode() {
+    Write-Host "============================================================" -ForegroundColor DarkGray
+    Write-Host " tg-session-checker-go" -ForegroundColor Cyan
+    Write-Host (" Telegram Session " + (zh "5om56YeP562b5Y+35bel5YW3")) -ForegroundColor White
+    Write-Host "============================================================" -ForegroundColor DarkGray
+    Write-Host (" 1. " + (zh "5Y+q562b5a2Y5rS7")) -ForegroundColor Green
+    Write-Host (" 2. " + (zh "5Y+q6LeRIFNwYW1Cb3Q=")) -ForegroundColor Yellow
+    Write-Host (" 3. " + (zh "5a2Y5rS7ICsgU3BhbUJvdA==")) -ForegroundColor Magenta
+    Write-Host "============================================================" -ForegroundColor DarkGray
 
-$mode = $null
-$modeLabel = $null
-while (-not $mode) {
-    $choice = Read-Host (zh "6K+36YCJ5oup5qih5byPIFsxLTNdICjpu5jorqQgMSk=")
-    if ([string]::IsNullOrWhiteSpace($choice)) {
-        $choice = "1"
-    }
+    while ($true) {
+        $choice = Read-Host (zh "6K+36YCJ5oup5qih5byPIFsxLTNdICjpu5jorqQgMSk=")
+        if ([string]::IsNullOrWhiteSpace($choice)) {
+            $choice = "1"
+        }
 
-    switch ($choice) {
-        "1" {
-            $mode = "alive"
-            $modeLabel = zh "5Y+q562b5a2Y5rS7"
-        }
-        "2" {
-            $mode = "spam"
-            $modeLabel = zh "5Y+q6LeRIFNwYW1Cb3Q="
-        }
-        "3" {
-            $mode = "both"
-            $modeLabel = zh "5a2Y5rS7ICsgU3BhbUJvdA=="
-        }
-        default {
-            Write-Host (zh "6L6T5YWl5LiN5a+577yM5aGrIDEgLyAyIC8gM+OAgg==") -ForegroundColor Yellow
+        switch ($choice) {
+            "1" { return @{ Mode = "alive"; Label = (zh "5Y+q562b5a2Y5rS7") } }
+            "2" { return @{ Mode = "spam"; Label = (zh "5Y+q6LeRIFNwYW1Cb3Q=") } }
+            "3" { return @{ Mode = "both"; Label = (zh "5a2Y5rS7ICsgU3BhbUJvdA==") } }
+            default {
+                Write-Host (zh "6L6T5YWl5LiN5a+577yM5aGrIDEgLyAyIC8gM+OAgg==") -ForegroundColor Yellow
+            }
         }
     }
 }
@@ -147,36 +138,59 @@ function Prompt-OutputDir([string]$defaultOutput) {
     return $defaultOutput
 }
 
-try {
-    $inputPath = Prompt-InputPath
-    $defaultOutput = Join-Path $scriptDir "output"
-    $outputDir = Prompt-OutputDir $defaultOutput
+function New-RunOutputDir([string]$outputRoot) {
+    $runFolder = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $runOutputDir = Join-Path $outputRoot $runFolder
+    New-Item -ItemType Directory -Path $runOutputDir -Force | Out-Null
+    return $runOutputDir
+}
 
-    if (-not (Test-Path -LiteralPath $outputDir)) {
-        New-Item -ItemType Directory -Path $outputDir | Out-Null
+while ($true) {
+    $modeInfo = Prompt-Mode
+    $mode = $modeInfo.Mode
+    $modeLabel = $modeInfo.Label
+
+    try {
+        $inputPath = Prompt-InputPath
+        $defaultOutputRoot = Join-Path $scriptDir "output"
+        $outputRoot = Prompt-OutputDir $defaultOutputRoot
+
+        if (-not (Test-Path -LiteralPath $outputRoot)) {
+            New-Item -ItemType Directory -Path $outputRoot | Out-Null
+        }
+        $outputDir = New-RunOutputDir $outputRoot
+
+        Write-Host ""
+        Write-Host (zh "5byA5aeL5omn6KGM77ya") -ForegroundColor Cyan
+        Write-Host ("  " + (zh "5qih5byP") + ": $modeLabel ($mode)") -ForegroundColor White
+        Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
+        Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
+        Write-Host ("  Workers: " + $workers) -ForegroundColor White
+        Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
+        Write-Host ""
+
+        $exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
+        if (Test-Path -LiteralPath $exePath) {
+            & $exePath -input $inputPath -mode $mode -workers $workers -out $outputDir
+        } else {
+            go run . -input $inputPath -mode $mode -workers $workers -out $outputDir
+        }
+    } catch {
+        Write-Host ""
+        Write-Host ("ERROR: " + $_.Exception.Message) -ForegroundColor Red
     }
 
     Write-Host ""
-    Write-Host (zh "5byA5aeL5omn6KGM77ya") -ForegroundColor Cyan
-    Write-Host ("  " + (zh "5qih5byP") + ": $modeLabel ($mode)") -ForegroundColor White
-    Write-Host ("  " + (zh "6L6T5YWl") + ": $inputPath") -ForegroundColor White
-    Write-Host ("  " + (zh "6L6T5Ye6") + ": $outputDir") -ForegroundColor White
-    Write-Host ("  Workers: " + $workers) -ForegroundColor White
-    Write-Host ("  AppID: " + $env:TG_APP_ID) -ForegroundColor White
-    Write-Host ""
+    Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host (" " + (zh "MS4g57un57ut5qOA5p+l5YW25LuW5paH5Lu2")) -ForegroundColor White
+    Write-Host (" " + (zh "Mi4g6YCA5Ye6")) -ForegroundColor White
+    Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
 
-    $exePath = Join-Path $scriptDir "tg-session-checker-go.exe"
-    if (Test-Path -LiteralPath $exePath) {
-        & $exePath -input $inputPath -mode $mode -workers $workers -out $outputDir
-    } else {
-        go run . -input $inputPath -mode $mode -workers $workers -out $outputDir
+    $nextAction = Read-Host (zh "6K+36YCJ5oup5LiL5LiA5q2lIFsxLTJdICjpu5jorqQgMik=")
+    if ([string]::IsNullOrWhiteSpace($nextAction)) {
+        $nextAction = "2"
     }
-
-    Write-Host ""
-    Read-Host (zh "5oyJ5Zue6L2m6YCA5Ye6") | Out-Null
-} catch {
-    Write-Host ""
-    Write-Host ("ERROR: " + $_.Exception.Message) -ForegroundColor Red
-    Read-Host (zh "5oyJ5Zue6L2m6YCA5Ye6") | Out-Null
-    exit 1
+    if ($nextAction -ne "1") {
+        break
+    }
 }
